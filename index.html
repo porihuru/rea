@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>納入台帳 → 品名抽出（PDF専用・段階1）</title>
+
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card-bg: #ffffff;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+      --danger: #dc2626;
+      --border: #e5e7eb;
+      --text-main: #111827;
+      --text-sub: #6b7280;
+      --mono: "SF Mono", Menlo, Consolas, monospace;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+    }
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px 16px 40px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    header-left-title {
+      display: block;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .subtitle {
+      margin: 2px 0 0;
+      font-size: 11px;
+      color: var(--text-sub);
+    }
+    .pdfjs-status {
+      font-size: 11px;
+      color: var(--text-sub);
+      font-family: var(--mono);
+      text-align: right;
+    }
+    .badge-version {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: #22c55e;
+    }
+    .badge-dot.ng {
+      background: #ef4444;
+    }
+
+    /* Controls */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .btn {
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 6px 16px;
+      font-size: 13px;
+      background: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: #111827;
+      box-shadow: 0 1px 1px rgba(15,23,42,0.08);
+      transition: background 0.12s ease, box-shadow 0.12s ease,
+        transform 0.06s ease;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 2px 5px rgba(37,99,235,0.35);
+    }
+    .btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 0 0 rgba(15,23,42,0.08);
+    }
+    .btn[disabled] {
+      opacity: 0.5;
+      cursor: default;
+      box-shadow: none;
+    }
+    .btn-primary[disabled] {
+      background: #9ca3af;
+      border-color: transparent;
+    }
+    .btn-icon {
+      font-size: 14px;
+    }
+
+    .note-line {
+      font-size: 11px;
+      color: var(--text-sub);
+      margin-bottom: 10px;
+    }
+
+    .card {
+      border-radius: 18px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+
+    .dropzone {
+      margin-top: 10px;
+      border-radius: 16px;
+      border: 1px dashed #cbd5f5;
+      background: #f9fbff;
+      padding: 22px 18px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-sub);
+    }
+    .dropzone strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+      color: #111827;
+    }
+
+    .status-line {
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .status-ok {
+      color: #16a34a;
+    }
+    .status-ng {
+      color: var(--danger);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .info-item label {
+      display: block;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-sub);
+      margin-bottom: 2px;
+    }
+    .info-item .value {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .amount-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .amount-pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .amount-pill span.label {
+      font-size: 11px;
+      color: var(--text-sub);
+    }
+    .amount-pill span.num {
+      font-family: var(--mono);
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-sub);
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+    }
+    thead {
+      background: #f3f4f6;
+    }
+    th, td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      text-align: left;
+      font-weight: 600;
+      color: #374151;
+      white-space: nowrap;
+    }
+    tbody tr:nth-child(even) td {
+      background: #fafbff;
+    }
+    td.no-col {
+      width: 68px;
+      white-space: nowrap;
+      font-family: var(--mono);
+      text-align: center;
+    }
+    td.name-col {
+      word-break: break-all;
+    }
+    .empty-msg {
+      font-size: 12px;
+      color: var(--text-sub);
+      padding: 10px;
+    }
+
+    .log {
+      font-size: 11px;
+      color: var(--text-sub);
+      font-family: var(--mono);
+      margin-top: 6px;
+      max-height: 120px;
+      overflow: auto;
+      border-radius: 10px;
+      background: #f9fafb;
+      border: 1px dashed #e5e7eb;
+      padding: 6px 8px;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 768px) {
+      .info-grid {
+        grid-template-columns: repeat(2, minmax(0,1fr));
+      }
+      .amount-grid {
+        grid-template-columns: repeat(2, minmax(0,1fr));
+      }
+      .page {
+        padding: 10px 10px 32px;
+      }
+      h1 {
+        font-size: 17px;
+      }
+    }
+  </style>
+
+  <!-- ローカル配置した pdf.min.js を読み込み -->
+  <script src="pdf.min.js"></script>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>納入台帳 → 品名抽出（PDF専用・段階1）</h1>
+      <p class="subtitle">品名行をPDFから抽出し、「No＋品名（1行）」一覧を作成します。数量・単価・金額・請求書PDF作成・Excel連携はまだ行いません。</p>
+    </div>
+    <div class="pdfjs-status">
+      <div class="badge-version" id="pdfjsVersionBadge">
+        <span class="badge-dot ng" id="pdfjsDot"></span>
+        <span id="pdfjsVersionText">PDF.js - / local?</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <label class="btn btn-primary">
+      <span class="btn-icon">📄</span>
+      <span>PDFを選択</span>
+      <input type="file" id="pdfInput" accept="application/pdf" style="display:none" />
+    </label>
+  </div>
+  <div class="note-line">
+    ※ 納入台帳PDFを1ファイルだけ読み込みます（<code>pdf.min.js</code> / <code>pdf.worker.min.js</code> は同じフォルダ）。
+  </div>
+
+  <!-- 概要カード -->
+  <section class="card" id="summaryCard">
+    <div id="statusLine" class="status-line status-ng">PDFが選択されていません。</div>
+
+    <div class="info-grid">
+      <div class="info-item">
+        <label>PDFファイル名</label>
+        <div class="value" id="infoFileName">-</div>
+      </div>
+      <div class="info-item">
+        <label>ページ数</label>
+        <div class="value" id="infoPages">-</div>
+      </div>
+      <div class="info-item">
+        <label>納地</label>
+        <div class="value" id="infoPlace">-</div>
+      </div>
+      <div class="info-item">
+        <label>業者名</label>
+        <div class="value" id="infoVendor">-</div>
+      </div>
+    </div>
+
+    <div class="amount-grid">
+      <div class="amount-pill">
+        <span class="label">課税対象額（原本）</span>
+        <span class="num" id="amtTaxable">-</span>
+      </div>
+      <div class="amount-pill">
+        <span class="label">消費税（原本）</span>
+        <span class="num" id="amtTax">-</span>
+      </div>
+      <div class="amount-pill">
+        <span class="label">合計（原本）</span>
+        <span class="num" id="amtTotal">-</span>
+      </div>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+      <strong>ここに納入台帳PDF（1ファイル）をドロップ</strong>
+      <div>または上の「PDFを選択」ボタンでファイルを指定してください。</div>
+    </div>
+  </section>
+
+  <!-- 明細テーブル -->
+  <section class="card">
+    <div class="section-title">
+      明細（No / 品名 1行）
+      <small id="rowsSummary">0件</small>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+        <tr>
+          <th style="width:70px;">No</th>
+          <th>品名（PDFから抽出し1行に整形）</th>
+        </tr>
+        </thead>
+        <tbody id="rowsBody">
+        <tr><td colspan="2" class="empty-msg">PDFが未解析です。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="log" id="logArea"></div>
+  </section>
+</div>
+
+<script>
+  // --- PDF.js 初期化 ---
+  (function initPdfJs() {
+    const badgeText = document.getElementById("pdfjsVersionText");
+    const dot = document.getElementById("pdfjsDot");
+    try {
+      if (!window.pdfjsLib) {
+        badgeText.textContent = "PDF.js NG / not loaded";
+        dot.classList.add("ng");
+        return;
+      }
+      // worker を同じフォルダから
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
+
+      const v = pdfjsLib.version || "unknown";
+      badgeText.textContent = "PDF.js " + v + " / local";
+      dot.classList.remove("ng");
+    } catch (e) {
+      badgeText.textContent = "PDF.js error";
+      dot.classList.add("ng");
+      console.error(e);
+    }
+  })();
+
+  const pdfInput = document.getElementById("pdfInput");
+  const statusLine = document.getElementById("statusLine");
+  const infoFileName = document.getElementById("infoFileName");
+  const infoPages = document.getElementById("infoPages");
+  const infoPlace = document.getElementById("infoPlace");
+  const infoVendor = document.getElementById("infoVendor");
+  const amtTaxable = document.getElementById("amtTaxable");
+  const amtTax = document.getElementById("amtTax");
+  const amtTotal = document.getElementById("amtTotal");
+  const rowsBody = document.getElementById("rowsBody");
+  const rowsSummary = document.getElementById("rowsSummary");
+  const logArea = document.getElementById("logArea");
+  const dropzone = document.getElementById("dropzone");
+
+  // --- ユーティリティ ---
+  function formatYen(n) {
+    if (n == null || n === "" || isNaN(Number(String(n).replace(/,/g, "")))) return "-";
+    const num = Number(String(n).replace(/,/g, ""));
+    return "¥" + num.toLocaleString("ja-JP");
+  }
+
+  function appendLog(msg) {
+    const now = new Date();
+    const time = now.toTimeString().slice(0, 8);
+    logArea.textContent += "[" + time + "] " + msg + "\n";
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  // pdf.js の textContent.items から、おおざっぱに「行」を作る
+  function buildLines(items) {
+    // y 降順（紙の上から）、同じ行内では x 昇順
+    const sorted = items.slice().sort((a, b) => {
+      const ay = a.transform[5], by = b.transform[5];
+      if (Math.abs(by - ay) > 2) return by - ay; // 上から下へ
+      return a.transform[4] - b.transform[4]; // 左から右へ
+    });
+
+    const lines = [];
+    let currentY = null;
+    let row = [];
+
+    const Y_THRESHOLD = 2.5; // 同一行とみなす縦方向の許容差
+
+    for (const it of sorted) {
+      const y = it.transform[5];
+      if (currentY === null) {
+        currentY = y;
+        row.push(it);
+      } else if (Math.abs(y - currentY) <= Y_THRESHOLD) {
+        row.push(it);
+      } else {
+        if (row.length) {
+          row.sort((a, b) => a.transform[4] - b.transform[4]);
+          lines.push(row.map(t => t.str).join(" ").replace(/\s+/g, " ").trim());
+        }
+        row = [it];
+        currentY = y;
+      }
+    }
+    if (row.length) {
+      row.sort((a, b) => a.transform[4] - b.transform[4]);
+      lines.push(row.map(t => t.str).join(" ").replace(/\s+/g, " ").trim());
+    }
+    return lines.filter(s => s && s.trim().length > 0);
+  }
+
+  // 品名クリーンアップ：ざっくり「単位＋数字」などを削る
+  function cleanupName(raw) {
+    if (!raw) return "";
+    let s = raw.trim();
+
+    // 先頭の単位（BG, KG, PC, EA, CN 等）と * を削除
+    s = s.replace(/^(BG|KG|PC|EA|CN|JB|LB)\s*\*?\s*/i, "");
+
+    // 先頭の連続した数値ブロックを削除（2,450.00 1.00 2.00 など）
+    s = s.replace(/^(([\d,.]+|[\d]+\/[\d]+)\s+)+/, "");
+
+    // 行末側の「数量・単価・金額」っぽい連続数字を大きめに削除
+    // （日本語が一度出てから、最後の連続数字群の手前までを残す）
+    const m = s.match(/^(.*?)(\s+[\d,]+\.\d{2}.*)$/);
+    if (m) {
+      s = m[1];
+    } else {
+      // うまく切れなかった場合は、末尾の「数字だけのかたまり」を1〜2個落とす
+      s = s.replace(/(\s+[\d,]+(?:\.\d+)?){1,2}\s*$/, "");
+    }
+
+    // まだ数字だらけなら、そのまま返す（無理に削らない）
+    s = s.replace(/\s+/g, " ").trim();
+    return s || raw.trim();
+  }
+
+  // 行金額合計や最終合計の行から「一番右端の数字」を拾う
+  function pickLastNumber(line) {
+    const matches = [...line.matchAll(/([\d,]+(?:\.\d+)?)/g)];
+    if (!matches.length) return null;
+    return matches[matches.length - 1][1];
+  }
+
+  // --- PDF 解析本体 ---
+  async function analyzePdfFile(file) {
+    statusLine.textContent = "PDFを解析中です...";
+    statusLine.classList.remove("status-ok");
+    statusLine.classList.remove("status-ng");
+
+    appendLog("解析開始: " + file.name);
+
+    const arrayBuf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+
+    const result = {
+      fileName: file.name,
+      pages: pdf.numPages,
+      place: "",
+      vendor: "",
+      taxable: null,
+      tax: null,
+      total: null,
+      rows: []
+    };
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const lines = buildLines(textContent.items);
+
+      appendLog(`ページ${pageNum}: 行数 ${lines.length}`);
+
+      // 納地・業者名（最初に見つかったものを採用）
+      for (const line of lines) {
+        if (!result.place && /納地[:：]/.test(line)) {
+          const m = line.match(/納地[:：]\s*(.+?)(?:\s+業者名|$)/);
+          result.place = (m ? m[1] : line.replace(/.*納地[:：]\s*/, "")).trim();
+        }
+        if (!result.vendor && /業者名[:：]/.test(line)) {
+          const m = line.match(/業者名[:：]\s*(.+)$/);
+          result.vendor = (m ? m[1] : line.replace(/.*業者名[:：]\s*/, "")).trim();
+        }
+      }
+
+      // 行明細
+      const headerIndex = lines.findIndex(
+        l => /No\b/.test(l) && /品\s*名/.test(l)
+      );
+      if (headerIndex !== -1) {
+        appendLog(`ページ${pageNum}: 明細ヘッダー検出 index=${headerIndex}`);
+        let currentRow = null;
+        let started = false;
+        for (let i = headerIndex + 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          // ページ内の別ヘッダーや「行金額合計」「請求書合計」で終了
+          if (/No\b/.test(line) && /品\s*名/.test(line)) {
+            currentRow = null;
+            started = false;
+            continue;
+          }
+          if (/行\s*金額\s*合計/.test(line) || /請求書合計/.test(line)) {
+            appendLog(`ページ${pageNum}: 明細終端行: ${line}`);
+            break;
+          }
+
+          const m = line.match(/^(\d{4})\s+(.+)$/);
+          if (m) {
+            // 新しい明細行
+            started = true;
+            currentRow = {
+              no: m[1],
+              nameRaw: m[2].trim()
+            };
+            result.rows.push(currentRow);
+          } else if (started && currentRow) {
+            // 品名の折り返し等を後ろに連結（別ヘッダーっぽい行は除外）
+            if (/^納\s*入\s*台\s*帳/.test(line)) continue;
+            if (/^納地[:：]/.test(line) || /^業者名[:：]/.test(line)) continue;
+            currentRow.nameRaw += " " + line;
+          }
+        }
+      }
+
+      // 最終ページの金額系は「後に出たもの優先」でどんどん上書き
+      for (const line of lines) {
+        if (/課税対象額/.test(line)) {
+          const n = pickLastNumber(line);
+          if (n != null) {
+            result.taxable = n;
+          }
+        }
+        if (/消費税/.test(line)) {
+          const n = pickLastNumber(line);
+          if (n != null) {
+            result.tax = n;
+          }
+        }
+        // 「請求書合計」「合計金額」などを想定
+        if (/合計/.test(line) && !/行\s*金額\s*合計/.test(line)) {
+          if (/請求書/.test(line) || /合計\s*[（(]/.test(line)) {
+            const n = pickLastNumber(line);
+            if (n != null) {
+              result.total = n;
+            }
+          }
+        }
+      }
+    }
+
+    // 品名クリーンアップ
+    for (const row of result.rows) {
+      row.name = cleanupName(row.nameRaw);
+    }
+
+    return result;
+  }
+
+  function renderResult(result) {
+    infoFileName.textContent = result.fileName || "-";
+    infoPages.textContent = result.pages || "-";
+    infoPlace.textContent = result.place || "-";
+    infoVendor.textContent = result.vendor || "-";
+
+    amtTaxable.textContent = result.taxable ? formatYen(result.taxable) : "-";
+    amtTax.textContent = result.tax ? formatYen(result.tax) : "-";
+    amtTotal.textContent = result.total ? formatYen(result.total) : "-";
+
+    rowsBody.innerHTML = "";
+    if (!result.rows.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 2;
+      td.className = "empty-msg";
+      td.textContent =
+        "品名行を抽出できませんでした。PDFのレイアウトが特殊な可能性があります。";
+      tr.appendChild(td);
+      rowsBody.appendChild(tr);
+    } else {
+      for (const row of result.rows) {
+        const tr = document.createElement("tr");
+        const tdNo = document.createElement("td");
+        tdNo.className = "no-col";
+        tdNo.textContent = row.no;
+        const tdName = document.createElement("td");
+        tdName.className = "name-col";
+        tdName.textContent = row.name;
+        tr.appendChild(tdNo);
+        tr.appendChild(tdName);
+        rowsBody.appendChild(tr);
+      }
+    }
+    rowsSummary.textContent = result.rows.length + "件";
+
+    statusLine.textContent = "OK: 解析完了しました。";
+    statusLine.classList.add("status-ok");
+  }
+
+  // --- イベント ---
+  pdfInput.addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      const result = await analyzePdfFile(file);
+      renderResult(result);
+      appendLog("解析完了: 明細 " + result.rows.length + "件");
+    } catch (e) {
+      console.error(e);
+      statusLine.textContent = "PDF解析でエラーが発生しました。";
+      statusLine.classList.add("status-ng");
+      appendLog("ERROR: " + e.message);
+    }
+  });
+
+  // D&D でも指定できるように
+  ;["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+  ;["dragenter", "dragover"].forEach(eventName => {
+    dropzone.addEventListener(eventName, () => {
+      dropzone.style.background = "#eef2ff";
+    });
+  });
+  ;["dragleave", "drop"].forEach(eventName => {
+    dropzone.addEventListener(eventName, () => {
+      dropzone.style.background = "#f9fbff";
+    });
+  });
+  dropzone.addEventListener("drop", async (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    pdfInput.files = e.dataTransfer.files; // 一応同期
+    try {
+      const result = await analyzePdfFile(file);
+      renderResult(result);
+      appendLog("解析完了(D&D): 明細 " + result.rows.length + "件");
+    } catch (err) {
+      console.error(err);
+      statusLine.textContent = "PDF解析でエラーが発生しました。";
+      statusLine.classList.add("status-ng");
+      appendLog("ERROR: " + err.message);
+    }
+  });
+</script>
+</body>
+</html>
