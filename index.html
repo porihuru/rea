@@ -33,13 +33,18 @@
     /* [CSS-02] ドロップゾーン */
     .drop-zone {
       border: 2px dashed #888;
-      padding: 10px;
+      padding: 14px;
       border-radius: 6px;
       text-align: center;
       margin: 8px 0;
       background: #fafafa;
       font-size: 13px;
       cursor: pointer;
+      min-height: 70px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
     }
     .drop-zone small {
       display: block;
@@ -73,7 +78,7 @@
       font-size: 12px;
     }
 
-    /* [CSS-03] 請求書ヘッダー入力 */
+    /* [CSS-03] 日付・宛先・業者 */
     .invoice-inputs {
       display: flex;
       flex-wrap: wrap;
@@ -134,7 +139,7 @@
     }
 
     .table-wrapper {
-      max-height: 320px;      /* 明細だけスクロール */
+      max-height: 320px;
       overflow: auto;
       border: 1px solid #ddd;
       border-radius: 4px;
@@ -168,6 +173,16 @@
     }
 
     /* [CSS-05] 印刷用 */
+    /* 画面用タイトル */
+    #appTitle { display:block; }
+    /* 印刷専用タイトル「請求書」 */
+    #printTitle {
+      display:none;
+      text-align:center;
+      font-size:18px;
+      margin:0 0 8px;
+    }
+
     @media print {
       body {
         margin: 10mm;
@@ -181,20 +196,19 @@
         display: none !important;
       }
 
-      h1 {
-        text-align: center;
-        font-size: 18px;
-        margin-bottom: 8px;
-      }
+      #appTitle { display:none; }
+      #printTitle { display:block; }
 
+      .invoice-inputs {
+        margin-bottom: 6mm;
+      }
       .invoice-field textarea,
       .invoice-field input[type="date"] {
         border: none;
         outline: none;
       }
-
-      .invoice-inputs {
-        margin-bottom: 6mm;
+      .invoice-field label {
+        display:none;
       }
 
       .table-wrapper {
@@ -224,8 +238,9 @@
 </head>
 <body>
   <!-- [HTML-01] タイトル・バージョン -->
-  <h1>納入台帳ビューア（PDFドロップ＋クリップボード）</h1>
-  <div class="version">v2025.11.21-local5 / Edge95 file://想定</div>
+  <h1 id="appTitle">納入台帳ビューア（PDFドロップ＋クリップボード）</h1>
+  <h1 id="printTitle">請求書</h1>
+  <div class="version">v2025.11.21-local6 / Edge95 file://想定</div>
 
   <div class="info">
     ① 納入台帳PDFを上の枠にドロップ（またはクリック選択）すると座標で抽出<br>
@@ -293,10 +308,9 @@
     // [ENV-01] Edge95 / file:// 用 structuredClone ポリフィル
     if (typeof structuredClone !== "function") {
       window.structuredClone = function(obj) {
-        // 簡易版：JSON経由でクローンするだけ（循環参照は不可）
         return JSON.parse(JSON.stringify(obj));
       };
-      console.log("structuredClone が無いので簡易ポリフィルを定義します（同じオブジェクトを返すだけ）。");
+      console.log("structuredClone が無いので簡易ポリフィルを定義します。");
     }
 
     //========================
@@ -327,7 +341,7 @@
     const ROW_HEIGHT_24  = TABLE_HEIGHT / ROW_SPLIT_24;
 
     //========================
-    // [UTIL-01] 共通ユーティリティ
+    // [UTIL-01] 金額整形
     //========================
     function normalizeAmount(str) {
       if (!str) return "";
@@ -351,7 +365,7 @@
         parseAndRender(text);
       } catch (err) {
         console.error(err);
-        alert("クリップボードの読み込みに失敗しました。\nhttps または http://localhost で開いているか確認してください。");
+        alert("クリップボードの読み込みに失敗しました。");
       }
     }
 
@@ -531,7 +545,6 @@
     function parseSummaryFromItems(items, summary) {
       if (!items || items.length === 0) return summary;
 
-      // X順で並べて1本の文字列に
       const sorted = items.slice().sort((a, b) => a.x - b.x);
       const allText = sorted.map(it => it.str).join("");
       const compact = allText.replace(/\s+/g, "");
@@ -540,7 +553,6 @@
       let tax   = summary.tax;
       let total = summary.total;
 
-      // ラベルごとに「次のラベルまで」を取得
       const mBase = compact.match(/課税対象額[:：]?([0-9,¥￥\\.\-]+?)(?=消費税|合計|$)/);
       if (mBase) base = normalizeAmount(mBase[1]);
 
@@ -825,8 +837,62 @@
     (function initDate() {
       const today = new Date();
       const yyyy = today.getFullYear();
-      const mm = ("0" + (today.getMonth() + 1)).slice(0-2);
+      const mm   = ("0" + (today.getMonth() + 1)).slice(-2);
+      const dd   = ("0" + today.getDate()).slice(-2);
+      const iso  = `${yyyy}-${mm}-${dd}`;
+      const dateInput = document.getElementById("invoiceDate");
+      if (dateInput && !dateInput.value) {
+        dateInput.value = iso;
+      }
     })();
+
+    //========================
+    // [INIT-02] ドロップ周り
+    //========================
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+
+    // 画面全体で既定の「ファイルを開く」動作を抑止
+    document.addEventListener("dragover", e => {
+      e.preventDefault();
+    });
+    document.addEventListener("drop", e => {
+      e.preventDefault();
+    });
+
+    dropZone.addEventListener("dragover", ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      dropZone.classList.remove("dragover");
+    });
+    dropZone.addEventListener("drop", ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      dropZone.classList.remove("dragover");
+      const files = ev.dataTransfer && ev.dataTransfer.files;
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      if (file.type !== "application/pdf") {
+        alert("PDFファイルを1つドロップしてください。");
+        return;
+      }
+      extractLedgerFromPdf(file);
+    });
+
+    dropZone.addEventListener("click", () => {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", ev => {
+      const file = ev.target.files[0];
+      if (file) {
+        extractLedgerFromPdf(file);
+      }
+    });
   </script>
 </body>
 </html>
