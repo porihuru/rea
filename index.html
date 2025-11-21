@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>pdf.js ローカル最小テスト</title>
+  <title>pdf.js ローカル最小テスト（worker完全OFF）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
@@ -13,126 +13,128 @@
     }
     h1{
       font-size: 18px;
-      margin: 0 0 4px;
-    }
-    .info{
-      font-size: 12px;
-      color:#555;
-      margin-bottom: 6px;
-      line-height:1.4;
+      margin-bottom: 4px;
     }
     #log{
-      margin-top: 8px;
+      font-family: "Consolas","Menlo",monospace;
+      font-size: 12px;
       background:#000;
       color:#0f0;
       padding:4px;
-      font-family: "Consolas","Menlo",monospace;
-      font-size: 12px;
-      height: 260px;
+      white-space:pre-wrap;
+      height:180px;
       overflow:auto;
-      white-space: pre-wrap;
+      margin-top:8px;
     }
-    #pageCanvas{
+    #pdfCanvas{
       border:1px solid #ccc;
       margin-top:8px;
       max-width:100%;
-      background:#fff;
+    }
+    button{
+      padding:4px 8px;
+      font-size:12px;
+      margin-left:4px;
     }
   </style>
 </head>
 <body>
-  <h1>pdf.js ローカル最小テスト</h1>
-  <div class="info">
-    v2025.11.21-min / Edge95 file:// 想定<br>
-    ① 同じフォルダに <code>pdf.min.js</code> を置く<br>
-    ② 「ファイルの選択」で PDF を選び、1ページ目を読み込めるか確認
-  </div>
+  <h1>pdf.js ローカル最小テスト（worker完全OFF）</h1>
+  <div>v2025.11.21-noWorker / Edge95想定 / file:// テスト</div>
 
-  <div>
-    PDFファイル選択：
-    <input type="file" id="pdfFile" accept="application/pdf">
+  <div style="margin-top:8px;">
+    <input type="file" id="fileInput" accept="application/pdf">
+    <button id="btnClear">ログクリア</button>
   </div>
-
-  <canvas id="pageCanvas"></canvas>
 
   <div id="log"></div>
+  <canvas id="pdfCanvas"></canvas>
 
-  <!-- [LIB] ローカルの pdf.min.js を読み込み -->
+  <!-- [LIB] ローカル pdf.min.js 読み込み（同じフォルダに配置） -->
   <script src="pdf.min.js"></script>
 
+  <!-- [APP] テスト用スクリプト -->
   <script>
-    //========================
-    // ログ出力ユーティリティ
-    //========================
-    const logEl = document.getElementById("log");
+    const logEl = document.getElementById('log');
     function log(msg){
-      const time = new Date().toLocaleTimeString();
+      const time = new Date().toTimeString().slice(0,8);
       logEl.textContent += `[${time}] ${msg}\n`;
       logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
     }
 
-    //========================
-    // pdf.js 初期化状況を確認
-    //========================
-    if (typeof pdfjsLib === "undefined") {
-      log("ERROR: pdfjsLib が定義されていません。pdf.min.js の配置を確認してください。");
-    } else {
-      log(`OK: pdf.min.js 読み込み完了。pdfjsLib.version = ${pdfjsLib.version || "不明"}`);
-      log(`location.protocol = ${location.protocol}（file:// 想定）`);
-      log("備考: file:// なので worker は使わずに main thread で動作させます。");
-    }
+    document.getElementById('btnClear').addEventListener('click', () => {
+      logEl.textContent = '';
+    });
 
-    //========================
-    // ファイル選択イベント
-    //========================
-    document.getElementById("pdfFile").addEventListener("change", async (ev) => {
-      const file = ev.target.files[0];
+    (function initPdfJs(){
+      if (typeof pdfjsLib === 'undefined') {
+        log('ERROR: pdfjsLib が定義されていません。pdf.min.js の配置を確認してください。');
+        return;
+      }
+      log(`OK: pdf.min.js 読み込み完了。pdfjsLib.version = ${pdfjsLib.version || '(不明)'}`);
+
+      const proto = location.protocol;
+      log(`location.protocol = ${proto} （file:// 想定）`);
+
+      // ★ ここが今回のポイント：worker を完全にオフにする設定
+      //   - workerSrc は一切指定しない
+      //   - disableWorker フラグを true にする
+      //   - 内部で「fake worker」を作ろうとして失敗した場合はログだけ出して無視する
+      try{
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '';  // 使わないが空文字を入れておく
+      }catch(e){
+        log('GlobalWorkerOptions への設定で例外が出ましたが無視します: ' + e);
+      }
+
+      // 旧APIだが 2.16.105 でも互換あり
+      pdfjsLib.disableWorker = true;
+
+      log('備考: worker は完全に使わず、main thread だけで描画させます。');
+    })();
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
       if (!file) return;
 
-      log("");
-      log("--- PDF読み込み開始 ---");
+      log('--- PDF読み込み開始 ---');
       log(`ファイル名: ${file.name} / サイズ: ${file.size} bytes`);
 
-      try {
+      try{
         const arrayBuffer = await file.arrayBuffer();
 
-        // ★ポイント★
-        // ・workerSrc は一切設定しない
-        // ・disableWorker:true だけ指定
+        // ★ disableWorker:true を明示
         const loadingTask = pdfjsLib.getDocument({
           data: arrayBuffer,
-          disableWorker: true
+          disableWorker: true,
+          // 念のため eval も使わない設定（古いブラウザ対策）
+          isEvalSupported: false
         });
 
         const pdf = await loadingTask.promise;
-        log(`ページ数: ${pdf.numPages} ページ`);
+        log(`ページ数: ${pdf.numPages} / 1ページ目を描画します。`);
 
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.2 });
+        const page1 = await pdf.getPage(1);
+        const viewport = page1.getViewport({ scale: 1.0 });
 
-        const canvas = document.getElementById("pageCanvas");
-        const ctx = canvas.getContext("2d");
+        const canvas = document.getElementById('pdfCanvas');
+        const ctx = canvas.getContext('2d');
         canvas.width  = viewport.width;
         canvas.height = viewport.height;
 
-        const renderTask = page.render({
+        const renderTask = page1.render({
           canvasContext: ctx,
           viewport: viewport
         });
         await renderTask.promise;
-        log("1ページ目の描画完了。");
 
-        const textContent = await page.getTextContent();
-        const text = textContent.items.map(it => it.str).join("");
-        log("1ページ目のテキスト（先頭100文字）:");
-        log(text.slice(0, 100) + (text.length > 100 ? "..." : ""));
-
-        log("--- PDF読み込みテスト終了 ---");
-      } catch (e) {
-        console.error(e);
-        log("ERROR: PDF読み込み中に例外が発生しました。");
-        log(String(e));
+        log('描画完了。テスト成功です。');
+      } catch (err){
+        log('ERROR: PDF読み込みまたは描画中に例外が発生しました。');
+        log(String(err && err.message ? err.message : err));
+        console.error(err);
       }
+      log('--- PDFテスト終了 ---');
     });
   </script>
 </body>
