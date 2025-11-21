@@ -1,90 +1,211 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>pdf.js ローカル最小テスト（テキスト抽出のみ）</title>
-<style>
-  body { font-family: sans-serif; padding: 10px; }
-  #log { background:#000; color:#0f0; padding:10px; white-space:pre-wrap; height:200px; overflow:auto; }
-  #out { width:100%; height:200px; }
-</style>
-
-<!-- ★ 同じフォルダに置いた pdf.min.js を読む -->
-<script src="pdf.min.js"></script>
-
-<script>
-// ------------ structuredClone ポリフィル（Edge95用） ----------------
-if (typeof structuredClone !== "function") {
-  window.structuredClone = (obj) => JSON.parse(JSON.stringify(obj));
-}
-
-// ------------ ログ出力 ----------------
-function log(msg){
-    document.getElementById("log").textContent += msg + "\n";
-}
-
-// ------------ PDF 読み込み処理 ----------------
-async function handleFileSelect(evt){
-    const file = evt.target.files[0];
-    if(!file){ return; }
-
-    log(`PDFテスト開始`);
-    log(`ファイル名: ${file.name} / サイズ: ${file.size} bytes`);
-
-    // File → ArrayBuffer 取得
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
-
-    log(`arrayBuffer.byteLength = ${arrayBuffer.byteLength}`);
-    log(`Uint8Array.length = ${uint8.length}`);
-
-    try {
-        // ★ worker 使わない（file:// では動かないため）
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-
-        // ★ Uint8Array を直接渡す（Edge95 / file:// では必須）
-        const pdf = await pdfjsLib.getDocument({ data: uint8, disableWorker: true }).promise;
-
-        log(`PDF 読み込み成功。ページ数 = ${pdf.numPages}`);
-
-        let allText = "";
-
-        for(let i=1;i<=pdf.numPages;i++){
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            const strings = content.items.map(it => it.str).join(" ");
-            allText += `--- page ${i} ---\n${strings}\n\n`;
-        }
-
-        document.getElementById("out").value = allText;
-        log(`テキスト抽出完了。文字数 = ${allText.length}`);
-
-    } catch(err){
-        alert("PDF 読み込み中にエラーが発生しました。\n" + err.message);
-        log("ERROR: " + err);
+  <!-- pdf.js ローカル最小テスト（テキスト抽出のみ）
+       v2025.11.21-srv1 / Edge95 file:// & http:// 想定
+       必要ファイル: 本HTML と 同じフォルダの pdf.min.js（v2.16.105）
+  -->
+  <meta charset="utf-8">
+  <title>pdf.js ローカル最小テスト（テキスト抽出のみ）</title>
+  <style>
+    body{
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Yu Gothic", sans-serif;
+      font-size: 14px;
+      margin: 8px;
     }
-
-    log(`--- PDFテスト終了 ---`);
-}
-</script>
-
+    h1{
+      font-size: 18px;
+      margin: 0 0 4px;
+    }
+    .version{
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    .row{
+      margin-bottom: 6px;
+    }
+    label{
+      margin-right: 4px;
+    }
+    button{
+      padding: 2px 8px;
+      margin-left: 4px;
+    }
+    textarea{
+      width: 100%;
+      box-sizing: border-box;
+      font-family: "Consolas","Menlo","Ricty Diminished","MS Gothic",monospace;
+    }
+    #logArea{
+      height: 180px;
+      background:#000;
+      color:#0f0;
+      padding:4px;
+      white-space:pre;
+      overflow:auto;
+    }
+    #textArea{
+      height: 260px;
+      margin-top: 6px;
+    }
+  </style>
 </head>
 <body>
+  <h1>pdf.js ローカル最小テスト（テキスト抽出のみ）</h1>
+  <div class="version">v2025.11.21-srv1 / Edge95 向け</div>
 
-<h2>pdf.js ローカル最小テスト（テキスト抽出のみ）</h2>
-v2025.11.21-min / Edge95 file://想定  
-<br><br>
+  <div class="row">
+    <label for="pdfFile">PDFファイル選択：</label>
+    <input type="file" id="pdfFile" accept="application/pdf">
+    <button id="clearBtn">クリア</button>
+  </div>
 
-PDFファイル選択：
-<input type="file" id="pdfFile" accept="application/pdf"><br><br>
+  <div class="row">
+    <textarea id="logArea" readonly>ここにログを表示します。</textarea>
+  </div>
 
-<div id="log">ログ出力エリア</div>
+  <div class="row">
+    <textarea id="textArea" placeholder="ここにPDFから抽出したテキストを表示します。"></textarea>
+  </div>
 
-<textarea id="out" placeholder="ここにPDFから抽出したテキストを表示します。"></textarea>
+  <!-- [LIB] pdf.js 本体（同じフォルダに pdf.min.js を配置） -->
+  <script src="pdf.min.js"></script>
 
-<script>
-document.getElementById("pdfFile").addEventListener("change", handleFileSelect);
-</script>
+  <script>
+    //============================================================
+    // [ENV-01] structuredClone ポリフィル（Edge95 対応）
+    //============================================================
+    if (typeof structuredClone !== "function") {
+      console.log("structuredClone が無いので簡易ポリフィルを定義します。");
+      window.structuredClone = function (obj) {
+        return JSON.parse(JSON.stringify(obj));
+      };
+    }
 
+    //============================================================
+    // [APP-01] ユーティリティ
+    //============================================================
+    const logArea  = document.getElementById("logArea");
+    const textArea = document.getElementById("textArea");
+    const fileInput = document.getElementById("pdfFile");
+    const clearBtn  = document.getElementById("clearBtn");
+
+    function logLine(msg) {
+      const now = new Date();
+      const t = now.toTimeString().slice(0,8);
+      logArea.value += "\n[" + t + "] " + msg;
+      logArea.scrollTop = logArea.scrollHeight;
+      console.log(msg);
+    }
+
+    function resetLog() {
+      logArea.value = "pdf.js ローカル最小テスト開始。\n" +
+        "OK: pdf.min.js 読み込み完了？  pdfjsLib.version = " + (window.pdfjsLib && pdfjsLib.version) + "\n" +
+        "location.protocol = " + location.protocol + "（file:// or http:// 想定）\n" +
+        "備考: worker は使わず main thread だけでテキスト抽出します。";
+    }
+
+    resetLog();
+
+    //============================================================
+    // [APP-02] PDF 読み込み & テキスト抽出
+    //============================================================
+    async function handlePdfFile(file) {
+      textArea.value = "";
+      if (!file) {
+        logLine("PDFファイルが選択されていません。");
+        return;
+      }
+
+      logLine("--- PDFテスト開始 ---");
+      logLine("ファイル名: " + file.name + " / サイズ: " + file.size + " bytes");
+
+      // FileReader で ArrayBuffer に読み込む
+      const reader = new FileReader();
+
+      reader.onerror = function (ev) {
+        logLine("ERROR: FileReader でエラーが発生しました。");
+        console.error(ev);
+      };
+
+      reader.onload = async function (ev) {
+        try {
+          const arrayBuffer = ev.target.result;
+          logLine("arrayBuffer.byteLength = " + arrayBuffer.byteLength);
+
+          const uint8 = new Uint8Array(arrayBuffer);
+          logLine("Uint8Array.length = " + uint8.length);
+
+          if (!window.pdfjsLib) {
+            logLine("ERROR: pdfjsLib が見つかりません。pdf.min.js の配置を確認してください。");
+            return;
+          }
+
+          // worker を完全に無効化して main thread のみで動かす
+          if (pdfjsLib.GlobalWorkerOptions) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+          }
+          if (typeof pdfjsLib.disableWorker === "boolean") {
+            pdfjsLib.disableWorker = true;
+          }
+
+          const loadingTask = pdfjsLib.getDocument({
+            data: uint8,
+            disableWorker: true,    // 念のためオプション側でも指定
+            stopAtErrors: true
+          });
+
+          let pdf;
+          try {
+            pdf = await loadingTask.promise;
+          } catch (e) {
+            logLine("ERROR: getDocument で例外が発生しました。");
+            logLine(e && (e.message || e.toString()));
+            console.error(e);
+            logLine("--- PDFテスト異常終了 ---");
+            return;
+          }
+
+          logLine("PDF 読み込み成功。ページ数 = " + pdf.numPages);
+
+          let fullText = "";
+          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(it => it.str).join("");
+            fullText += "---- page " + pageNum + " ----\n" + pageText + "\n\n";
+          }
+
+          textArea.value = fullText;
+          logLine("テキスト抽出完了。全体文字数 = " + fullText.length);
+          logLine("--- PDFテスト正常終了 ---");
+        } catch (err) {
+          logLine("ERROR: PDF読み込みまたはテキスト抽出中に例外が発生しました。");
+          logLine(err && (err.message || err.toString()));
+          console.error(err);
+          logLine("--- PDFテスト異常終了 ---");
+        }
+      };
+
+      // 読み込み開始
+      reader.readAsArrayBuffer(file);
+    }
+
+    //============================================================
+    // [APP-03] イベント設定
+    //============================================================
+    fileInput.addEventListener("change", (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      handlePdfFile(file);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      fileInput.value = "";
+      textArea.value = "";
+      resetLog();
+      logLine("クリアしました。");
+    });
+  </script>
 </body>
 </html>
