@@ -950,16 +950,181 @@
 </body>
 </html>
 
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>pdf.js ローカル診断</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- [LIB-02] ローカル版 pdf.js 読み込み（Edge95 file:// 専用・ワーカー完全OFF） -->
-<script>
-  // ★pdf.js が読み込まれる前に、グローバルで worker を無効化する
-  window.pdfjsDisableWorker = true;   // old 設定用フラグ
-</script>
-<script src="pdf.min.js"></script>
-<script>
-  if (!window['pdfjsLib']) {
-    alert("pdf.js（pdf.min.js）が読み込まれていません。同じフォルダに pdf.min.js を置いてください。");
-  }
-  // GlobalWorkerOptions.workerSrc は設定しない（= worker を使わない）
-</script>
+  <style>
+    body{
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      margin:8px;
+      font-size:14px;
+    }
+    h1{
+      font-size:18px;
+      margin:0 0 4px 0;
+    }
+    #ver{
+      font-size:11px;
+      color:#666;
+      margin-bottom:8px;
+    }
+    .box{
+      border:1px solid #ccc;
+      padding:6px;
+      border-radius:4px;
+      margin-bottom:8px;
+      background:#fafafa;
+    }
+    #log{
+      white-space:pre-wrap;
+      font-family:"Consolas","Menlo",monospace;
+      font-size:12px;
+      max-height:320px;
+      overflow:auto;
+      background:#111;
+      color:#eee;
+    }
+    button{
+      padding:4px 10px;
+      font-size:13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>pdf.js ローカル診断</h1>
+  <div id="ver">v2025.11.21-diag / Edge95 file:// 想定</div>
+
+  <div class="box">
+    <div>1. 同じフォルダに <b>pdf.min.js</b> と <b>pdf.worker.min.js</b> を置く。</div>
+    <div>2. 下の「PDFファイル選択」から納入台帳PDFを1つ選ぶ。</div>
+    <div>3. ログに「workerあり / workerなし」の結果が出ます。</div>
+  </div>
+
+  <div class="box">
+    <label>
+      PDFファイル選択：
+      <input type="file" id="pdfFile" accept="application/pdf">
+    </label>
+    <button id="btnClear">ログクリア</button>
+  </div>
+
+  <div id="log" class="box"></div>
+
+  <!-- pdf.js 本体（ローカル。htmlと同じフォルダ） -->
+  <script>
+    // ===== [CFG] worker ファイル名 =====
+    // もしファイル名を pdf.worker.js にしている場合は、ここを変更してください。
+    const WORKER_FILE = "pdf.worker.min.js";
+
+    // Edge 95 用 structuredClone ポリフィル
+    if (typeof window.structuredClone === "undefined") {
+      window.structuredClone = function(obj) {
+        return JSON.parse(JSON.stringify(obj));
+      };
+    }
+  </script>
+  <script src="pdf.min.js"></script>
+
+  <script>
+    const logEl = document.getElementById("log");
+
+    function log(msg){
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // 初期診断
+    (function initDiag(){
+      log("=== 初期診断開始 ===");
+      log("location.href = " + location.href);
+      log("UserAgent = " + navigator.userAgent);
+
+      if (window.pdfjsLib) {
+        log("pdf.min.js 読み込み: OK");
+        // worker パス設定
+        pdfjsLib.GlobalWorkerOptions.workerSrc = WORKER_FILE;
+        log("workerSrc 設定値: " + pdfjsLib.GlobalWorkerOptions.workerSrc);
+      } else {
+        log("pdf.min.js 読み込み: NG（window.pdfjsLib が未定義）");
+        return;
+      }
+
+      // worker ファイル自体が存在するか XHR で確認
+      try{
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", WORKER_FILE);
+        xhr.onreadystatechange = function(){
+          if (xhr.readyState === 4) {
+            // file:// の場合 status=0 になることもあるので 0 or 200 を OK とみなす
+            if (xhr.status === 200 || xhr.status === 0) {
+              log(`workerファイル確認: ${WORKER_FILE} 読み込み OK (status=${xhr.status})`);
+            } else {
+              log(`workerファイル確認: ${WORKER_FILE} 読み込み NG (status=${xhr.status})`);
+            }
+          }
+        };
+        xhr.onerror = function(e){
+          log("workerファイル確認: XHR error " + e);
+        };
+        xhr.send();
+      }catch(e){
+        log("workerファイル確認: 例外発生 " + e);
+      }
+
+      log("=== 初期診断終了 ===");
+    })();
+
+    // PDFテスト
+    async function runTests(file){
+      if (!window.pdfjsLib){
+        log("pdfjsLib が未定義のためテストできません。");
+        return;
+      }
+      log("");
+      log("=== PDFテスト開始: " + file.name + " ===");
+
+      const arrayBuffer = await file.arrayBuffer();
+
+      // worker あり（本番想定）
+      await testOne(arrayBuffer, true);
+
+      // worker なし（フォールバック）
+      await testOne(arrayBuffer, false);
+
+      log("=== PDFテスト終了 ===");
+    }
+
+    async function testOne(arrayBuffer, useWorker){
+      const modeLabel = useWorker ? "workerあり(disableWorker=false)" :
+                                    "workerなし(disableWorker=true)";
+      try{
+        const loadingTask = pdfjsLib.getDocument({
+          data: arrayBuffer,
+          disableWorker: !useWorker
+        });
+        const pdf = await loadingTask.promise;
+        log(`[${modeLabel}] OK: ページ数 = ${pdf.numPages}`);
+        pdf.destroy();
+      }catch(e){
+        log(`[${modeLabel}] NG: ${e && e.message ? e.message : e}`);
+      }
+    }
+
+    // イベント
+    document.getElementById("pdfFile").addEventListener("change", (ev)=>{
+      const file = ev.target.files[0];
+      if (!file) return;
+      runTests(file);
+    });
+
+    document.getElementById("btnClear").addEventListener("click", ()=>{
+      logEl.textContent = "";
+    });
+  </script>
+</body>
+</html>
