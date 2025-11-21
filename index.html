@@ -1,145 +1,169 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <title>pdf.js ローカル最小テスト</title>
+  <meta charset="UTF-8">
+  <title>pdf.js ローカル最小テスト (Edge95 file用)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
     body{
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 8px;
-      font-size: 14px;
+      margin:8px;
+      font-size:14px;
     }
     h1{
-      font-size: 18px;
-      margin: 0 0 4px;
+      font-size:18px;
+      margin:0 0 4px;
     }
-    #version{
-      font-size: 11px;
-      color: #555;
-      margin-bottom: 8px;
+    .ver{
+      font-size:11px;
+      color:#666;
+      margin-bottom:6px;
     }
-    #controls{
-      margin-bottom: 8px;
+    .controls{
+      margin-bottom:8px;
+    }
+    button{
+      padding:4px 10px;
+      font-size:13px;
+      border-radius:4px;
+      border:1px solid #888;
+      background:#f5f5f5;
+      cursor:pointer;
+    }
+    button:hover{
+      background:#e0e0e0;
     }
     #log{
+      margin-top:6px;
+      padding:6px;
+      border-radius:4px;
+      border:1px solid #ccc;
+      background:#000;
+      color:#0f0;
       font-family: "Consolas","Menlo",monospace;
-      font-size: 12px;
-      background: #111;
-      color: #0f0;
-      padding: 4px;
-      height: 120px;
-      overflow: auto;
-      white-space: pre-wrap;
-      border-radius: 4px;
-      margin-top: 8px;
+      font-size:11px;
+      max-height:260px;
+      overflow:auto;
+      white-space:pre;
     }
-    #pdf-canvas{
-      border: 1px solid #ccc;
-      margin-top: 8px;
-      max-width: 100%;
-      background: #fff;
+    #viewerBox{
+      margin-top:8px;
+      border:1px solid #ccc;
+      padding:4px;
+      display:inline-block;
+      background:#777;
+    }
+    canvas{
+      background:#fff;
+      max-width:100%;
+      height:auto;
+      display:block;
     }
   </style>
 </head>
 <body>
   <h1>pdf.js ローカル最小テスト</h1>
-  <div id="version">v2025.11.21-min / Edge95 file:// 想定</div>
+  <div class="ver">v2025.11.21-test / Edge95 file:// 想定</div>
 
-  <div id="controls">
+  <div class="controls">
     <input type="file" id="fileInput" accept="application/pdf">
-    <span id="info">PDF未選択</span>
+    <button id="btnClear">ログクリア</button>
   </div>
 
-  <canvas id="pdf-canvas"></canvas>
+  <div id="viewerBox">
+    <canvas id="pdfCanvas" width="400" height="400"></canvas>
+  </div>
+
   <div id="log"></div>
 
-  <!-- [LIB-01] ローカルの pdf.min.js を読み込み（必ず同じフォルダに置く） -->
+  <!-- [LIB] 同じフォルダの pdf.min.js を読み込む -->
   <script src="pdf.min.js"></script>
 
-  <!-- [APP-01] 最小テスト用スクリプト -->
   <script>
-    // [APP-01-1] ログ出力ユーティリティ
+    // [LOG-01] ログ出力
     function log(msg){
       const el = document.getElementById("log");
-      const now = new Date().toLocaleTimeString("ja-JP",{hour12:false});
+      const now = new Date().toTimeString().slice(0,8);
       el.textContent += "[" + now + "] " + msg + "\n";
       el.scrollTop = el.scrollHeight;
+      console.log(msg);
     }
 
-    // [APP-01-2] pdf.js 初期化（worker 完全 OFF）
-    (function initPdfJs(){
+    // [APP-INIT] 初期化
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("btnClear").addEventListener("click", () => {
+        document.getElementById("log").textContent = "";
+      });
+
+      const fi = document.getElementById("fileInput");
+      fi.addEventListener("change", ev => {
+        const file = ev.target.files[0];
+        if (file) {
+          loadPdfFile(file);
+        }
+      });
+
+      // pdf.js が正しく読み込まれたか確認
       if (typeof pdfjsLib === "undefined") {
-        alert("pdfjsLib が見つかりません。pdf.min.js が同じフォルダにあるか確認してください。");
-        log("ERROR: pdfjsLib not found.");
-        return;
+        log("ERROR: pdfjsLib が undefined です。pdf.min.js の配置を確認してください。");
+      } else {
+        log("OK: pdf.min.js 読み込み完了。pdfjsLib.version = " + (pdfjsLib.version || "不明"));
+        log("UA: " + navigator.userAgent);
+        log("location.protocol = " + location.protocol + " （file:// 想定）");
+        log("備考: worker は使わずに disableWorker:true で動作させます。");
       }
-      try {
-        // Edge95 + file:// 用に worker を完全に無効化
-        if (pdfjsLib.GlobalWorkerOptions) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-        }
-        // 一部バージョンで存在するフラグ
-        if (typeof pdfjsLib.disableWorker !== "undefined") {
-          pdfjsLib.disableWorker = true;
-        }
-        log("pdf.js 初期化：worker 無効化設定を適用しました。");
-      } catch(e){
-        log("WARN: worker 無効化中に例外: " + e);
-      }
-    })();
-
-    // [APP-01-3] PDF読み込み処理
-    document.getElementById("fileInput").addEventListener("change", function(ev){
-      const file = ev.target.files[0];
-      if (!file){
-        return;
-      }
-      document.getElementById("info").textContent = "読み込み中: " + file.name;
-      log("PDF選択: " + file.name + " (" + file.size + " bytes)");
-
-      const reader = new FileReader();
-      reader.onerror = function(e){
-        log("FileReader error: " + e.target.error);
-        alert("PDFの読み込みに失敗しました。");
-      };
-      reader.onload = async function(e){
-        const data = new Uint8Array(e.target.result);
-        try {
-          log("pdfjsLib.getDocument() 開始");
-          const loadingTask = pdfjsLib.getDocument({
-            data: data,
-            disableWorker: true   // 念のためオプション側でもOFF
-          });
-          const pdfDoc = await loadingTask.promise;
-          log("PDF読み込み完了: ページ数 = " + pdfDoc.numPages);
-          document.getElementById("info").textContent =
-            "読み込み完了 / ページ数: " + pdfDoc.numPages;
-
-          // 1ページ目だけ描画
-          const page = await pdfDoc.getPage(1);
-          const scale = 1.2;
-          const viewport = page.getViewport({ scale });
-
-          const canvas = document.getElementById("pdf-canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-
-          log("1ページ目描画開始 (scale=" + scale + ")");
-          await page.render({
-            canvasContext: ctx,
-            viewport: viewport
-          }).promise;
-          log("1ページ目描画完了。");
-
-        } catch(err){
-          console.error(err);
-          log("ERROR: pdf.js 処理中に例外: " + err);
-          alert("pdf.js でエラーが発生しました。F12 のコンソールも確認してください。");
-        }
-      };
-      reader.readAsArrayBuffer(file);
     });
+
+    // [PDF-LOAD] PDF 読み込み＆1ページ目描画
+    async function loadPdfFile(file){
+      try{
+        if (typeof pdfjsLib === "undefined") {
+          alert("pdf.js が読み込まれていません。");
+          return;
+        }
+
+        log("---- PDF読み込み開始 ----");
+        log("ファイル名: " + file.name + " / サイズ: " + file.size + " bytes");
+
+        const arrayBuffer = await file.arrayBuffer();
+
+        log("getDocument 呼び出し (disableWorker:true) ...");
+        const loadingTask = pdfjsLib.getDocument({
+          data: arrayBuffer,
+          disableWorker: true   // ★ worker を完全に無効化
+        });
+
+        const pdf = await loadingTask.promise;
+        log("OK: PDF 読み込み成功。ページ数 = " + pdf.numPages);
+
+        const page = await pdf.getPage(1);
+        log("1ページ目取得成功。");
+
+        const scale = 1.0;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.getElementById("pdfCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width  = viewport.width;
+        canvas.height = viewport.height;
+
+        const renderContext = {
+          canvasContext: ctx,
+          viewport: viewport
+        };
+
+        log("1ページ目描画開始...");
+        await page.render(renderContext).promise;
+        log("OK: 描画完了。");
+
+        log("---- テスト完了（エラーが無ければ pdf.min.js は正常） ----");
+
+      }catch(e){
+        console.error(e);
+        log("ERROR: " + (e && e.message ? e.message : String(e)));
+      }
+    }
   </script>
 </body>
 </html>
