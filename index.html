@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>pdf.js ローカル最小テスト（worker完全OFF）</title>
+  <title>pdf.js ローカル最小テスト</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
@@ -13,7 +13,13 @@
     }
     h1{
       font-size: 18px;
-      margin-bottom: 4px;
+      margin: 0 0 8px;
+    }
+    .info{
+      font-size: 12px;
+      color:#555;
+      line-height:1.4;
+      margin-bottom:8px;
     }
     #log{
       font-family: "Consolas","Menlo",monospace;
@@ -21,9 +27,10 @@
       background:#000;
       color:#0f0;
       padding:4px;
-      white-space:pre-wrap;
-      height:180px;
+      height:220px;
       overflow:auto;
+      white-space:pre-wrap;
+      border-radius:4px;
       margin-top:8px;
     }
     #pdfCanvas{
@@ -31,110 +38,92 @@
       margin-top:8px;
       max-width:100%;
     }
-    button{
-      padding:4px 8px;
-      font-size:12px;
-      margin-left:4px;
-    }
   </style>
 </head>
 <body>
-  <h1>pdf.js ローカル最小テスト（worker完全OFF）</h1>
-  <div>v2025.11.21-noWorker / Edge95想定 / file:// テスト</div>
-
-  <div style="margin-top:8px;">
-    <input type="file" id="fileInput" accept="application/pdf">
-    <button id="btnClear">ログクリア</button>
+  <h1>pdf.js ローカル最小テスト</h1>
+  <div class="info">
+    v2025.11.21-test / Edge95 file:// 想定<br>
+    同じフォルダに <code>test_pdf.html</code> と <code>pdf.min.js</code> を置いてください。
   </div>
 
-  <div id="log"></div>
-  <canvas id="pdfCanvas"></canvas>
+  <div>
+    <label>PDFファイル選択：
+      <input type="file" id="fileInput" accept="application/pdf">
+    </label>
+  </div>
 
-  <!-- [LIB] ローカル pdf.min.js 読み込み（同じフォルダに配置） -->
+  <canvas id="pdfCanvas"></canvas>
+  <div id="log"></div>
+
+  <!-- [LIB-01] Edge95 用 structuredClone ポリフィル（pdf.min.js より前） -->
+  <script>
+    if (typeof window.structuredClone !== "function") {
+      // Edge95 には structuredClone がないので、単純なダミー実装にする。
+      // disableWorker:true で main thread だけで動かす前提なので、
+      // 「コピーではなく同じ参照を返す」だけで十分です。
+      window.structuredClone = function (value) {
+        return value;
+      };
+    }
+  </script>
+
+  <!-- [LIB-02] ローカル版 pdf.js 読み込み（同じフォルダに pdf.min.js があること） -->
   <script src="pdf.min.js"></script>
 
-  <!-- [APP] テスト用スクリプト -->
+  <!-- [APP-01] テスト本体スクリプト -->
   <script>
-    const logEl = document.getElementById('log');
+    const logEl = document.getElementById("log");
+    const canvas = document.getElementById("pdfCanvas");
+    const ctx = canvas.getContext("2d");
+
     function log(msg){
-      const time = new Date().toTimeString().slice(0,8);
-      logEl.textContent += `[${time}] ${msg}\n`;
+      logEl.textContent += msg + "\n";
       logEl.scrollTop = logEl.scrollHeight;
-      console.log(msg);
     }
 
-    document.getElementById('btnClear').addEventListener('click', () => {
-      logEl.textContent = '';
-    });
-
-    (function initPdfJs(){
-      if (typeof pdfjsLib === 'undefined') {
-        log('ERROR: pdfjsLib が定義されていません。pdf.min.js の配置を確認してください。');
-        return;
-      }
-      log(`OK: pdf.min.js 読み込み完了。pdfjsLib.version = ${pdfjsLib.version || '(不明)'}`);
-
-      const proto = location.protocol;
-      log(`location.protocol = ${proto} （file:// 想定）`);
-
-      // ★ ここが今回のポイント：worker を完全にオフにする設定
-      //   - workerSrc は一切指定しない
-      //   - disableWorker フラグを true にする
-      //   - 内部で「fake worker」を作ろうとして失敗した場合はログだけ出して無視する
-      try{
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '';  // 使わないが空文字を入れておく
-      }catch(e){
-        log('GlobalWorkerOptions への設定で例外が出ましたが無視します: ' + e);
-      }
-
-      // 旧APIだが 2.16.105 でも互換あり
-      pdfjsLib.disableWorker = true;
-
-      log('備考: worker は完全に使わず、main thread だけで描画させます。');
+    // 起動時ログ
+    (function initLog(){
+      log("OK: pdf.min.js 読み込み完了？ pdfjsLib.version = " + (window.pdfjsLib && pdfjsLib.version));
+      log("location.protocol = " + location.protocol + " （file:// 想定）");
+      log("備考: worker は完全に使わず、main thread だけで描画させます。");
+      log("");
     })();
 
-    document.getElementById('fileInput').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    document.getElementById("fileInput").addEventListener("change", async (ev) => {
+      const file = ev.target.files[0];
       if (!file) return;
 
-      log('--- PDF読み込み開始 ---');
-      log(`ファイル名: ${file.name} / サイズ: ${file.size} bytes`);
+      log("--- PDF読み込み開始 ---");
+      log("ファイル名: " + file.name + " / サイズ: " + file.size + " bytes");
 
       try{
         const arrayBuffer = await file.arrayBuffer();
 
-        // ★ disableWorker:true を明示
+        // ★ ここがポイント：disableWorker:true で worker 無効
         const loadingTask = pdfjsLib.getDocument({
           data: arrayBuffer,
-          disableWorker: true,
-          // 念のため eval も使わない設定（古いブラウザ対策）
-          isEvalSupported: false
+          disableWorker: true
         });
 
         const pdf = await loadingTask.promise;
-        log(`ページ数: ${pdf.numPages} / 1ページ目を描画します。`);
+        const page = await pdf.getPage(1);
 
-        const page1 = await pdf.getPage(1);
-        const viewport = page1.getViewport({ scale: 1.0 });
-
-        const canvas = document.getElementById('pdfCanvas');
-        const ctx = canvas.getContext('2d');
+        const viewport = page.getViewport({ scale: 1.2 });
         canvas.width  = viewport.width;
         canvas.height = viewport.height;
 
-        const renderTask = page1.render({
-          canvasContext: ctx,
-          viewport: viewport
-        });
-        await renderTask.promise;
+        const renderCtx = { canvasContext: ctx, viewport };
+        await page.render(renderCtx).promise;
 
-        log('描画完了。テスト成功です。');
-      } catch (err){
-        log('ERROR: PDF読み込みまたは描画中に例外が発生しました。');
-        log(String(err && err.message ? err.message : err));
-        console.error(err);
+        log("ページ1の描画が完了しました。");
+        log("--- PDFテスト終了 ---");
+      } catch (e){
+        console.error(e);
+        log("ERROR: PDF読み込みまたは描画中に例外が発生しました。");
+        log(String(e && e.message || e));
+        log("--- PDFテスト終了 ---");
       }
-      log('--- PDFテスト終了 ---');
     });
   </script>
 </body>
