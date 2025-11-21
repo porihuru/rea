@@ -949,3 +949,17 @@
   </script>
 </body>
 </html>
+
+
+<!-- [LIB-02] ローカル版 pdf.js 読み込み（Edge95 file:// 専用・ワーカー完全OFF） -->
+<script>
+  // ★pdf.js が読み込まれる前に、グローバルで worker を無効化する
+  window.pdfjsDisableWorker = true;   // old 設定用フラグ
+</script>
+<script src="pdf.min.js"></script>
+<script>
+  if (!window['pdfjsLib']) {
+    alert("pdf.js（pdf.min.js）が読み込まれていません。同じフォルダに pdf.min.js を置いてください。");
+  }
+  // GlobalWorkerOptions.workerSrc は設定しない（= worker を使わない）
+</script>
