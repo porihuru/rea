@@ -151,6 +151,21 @@
       margin-top:4px;
       white-space:pre-line;
     }
+    #page-controls{
+      margin:4px 0;
+      font-size:12px;
+    }
+    #page-controls button{
+      font-size:12px;
+      padding:2px 6px;
+      margin:0 2px;
+    }
+    #btn-copy-invoice{
+      margin-top:6px;
+      width:100%;
+      font-size:12px;
+      padding:4px 0;
+    }
   </style>
 </head>
 <body>
@@ -323,6 +338,9 @@
 消費税: -
 合計: -
       </div>
+
+      <button id="btn-copy-invoice">請求書データコピー</button>
+
       <div class="small-note" style="margin-top:4px;">
         ※ヘッダー／明細／最終ページ集計は [EX-HEAD-01] / [EX-DETAIL-01/02] / [EX-SUM-01] で座標＋テキストから自動抽出。
       </div>
@@ -331,6 +349,14 @@
     <!-- 右：PDFキャンバスだけ大きく -->
     <section id="center-panel" class="panel">
       <h2>③ PDFプレビュー（1ページ目＋ガイド線）</h2>
+
+      <!-- ページ送りコントロール -->
+      <div id="page-controls">
+        <button id="btn-prev-page">◀</button>
+        <span id="page-info">- / -</span>
+        <button id="btn-next-page">▶</button>
+      </div>
+
       <div id="canvas-container">
         <canvas id="pdf-canvas"></canvas>
       </div>
@@ -376,17 +402,18 @@
     pageCount: 0,
     viewport: null,
     scale: 1.3,
-    useWorker: true,
+    useWorker: false, // 常にワーカー無効
+    currentPage: 1,
     params: {
-      // 明細テーブル
+      // 明細テーブル（画像どおり）
       tableYTop: 474,
       tableYBottom: 42,
       rows24: 24,
       rows48: 48,
-      // ヘッダー＆集計エリア（初期値はざっくり）
-      headerYTop: 900,
-      headerYBottom: 600,
-      sumYTop: 200,
+      // ヘッダー＆集計エリア
+      headerYTop: 517,
+      headerYBottom: 478,
+      sumYTop: 42,
       sumYBottom: 0,
       // 列のX
       noXMin: 71,
@@ -394,7 +421,7 @@
       nameXMin: 88,
       nameXMax: 142,
       unitXMin: 142,
-      unitXMax: 142,
+      unitXMax: 152,
       qtyXMin: 742,
       qtyXMax: 782,
       priceXMin: 782,
@@ -402,6 +429,9 @@
       amountXMin: 782,
       amountXMax: 821
     },
+    header: { ymd:'-', place:'-', vendor:'-' },
+    sum: { taxable:'-', tax:'-', total:'-' },
+    details: [],
     redrawTimer: null
   };
 
@@ -409,28 +439,25 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     try {
-      const isFile = (location.protocol === 'file:');
-
       if (!window.pdfjsLib) {
         reportError(
           '[ERR-01]',
-          'pdfjsLib が定義されていません。pdf.min.js / pdf.worker.min.js の配置と <script src="pdf.min.js"> を確認してください。',
+          'pdfjsLib が定義されていません。pdf.min.js の配置と <script src="pdf.min.js"> を確認してください。',
           null
         );
         return;
       }
 
-      if (isFile) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = null;
-        state.useWorker = false;
-      } else {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
-        state.useWorker = true;
-      }
+      // Edge95対策：常に worker 無効（fake worker も使わない）
+      pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+      state.useWorker = false;
 
       initDragAndDrop();
       initParamsUI();
+      initPageControls();
+      initCopyButton();
       setStatus('PDF未読込');
+      updatePageControls();
 
     } catch (e) {
       reportError('[ERR-INIT]', '初期化中にエラーが発生しました。', e);
@@ -482,7 +509,7 @@
     reader.readAsArrayBuffer(file);
   }
 
-  //========== PDF読み込み＆1ページ目レンダリング ==========
+  //========== PDF読み込み＆レンダリング ==========
 
   async function loadPdfDocument(fileName) {
     setStatus('PDF読み込み中...');
@@ -490,11 +517,12 @@
     try {
       const loadingTask = pdfjsLib.getDocument({
         data: state.pdfData,
-        disableWorker: !state.useWorker
+        disableWorker: true   // ワーカー完全無効
       });
       const pdfDoc = await loadingTask.promise;
       state.pdfDoc = pdfDoc;
       state.pageCount = pdfDoc.numPages;
+      state.currentPage = 1;
 
       const fi = document.getElementById('file-info');
       fi.innerHTML =
@@ -504,14 +532,68 @@
         `納地: （抽出中）<br>` +
         `業者名: （抽出中）`;
 
-      await renderPageWithGuides(1);
+      await renderPageWithGuides(state.currentPage);
 
       setStatus('PDF読込完了（抽出中）...');
       await extractAllPages();
-      setStatus('PDF読込＆抽出完了（1ページ目表示中）');
+      setStatus('PDF読込＆抽出完了（ページ送り可）');
+
+      updatePageControls();
 
     } catch (err) {
       reportError('[ERR-02]', 'PDFの読み込み中にエラーが発生しました。', err);
+    }
+  }
+
+  // ページ送りUI
+  function initPageControls() {
+    const prev = document.getElementById('btn-prev-page');
+    const next = document.getElementById('btn-next-page');
+
+    prev.addEventListener('click', async () => {
+      if (!state.pdfDoc) return;
+      if (state.currentPage <= 1) return;
+      state.currentPage--;
+      try {
+        setStatus(`ページ ${state.currentPage} を描画中...`);
+        await renderPageWithGuides(state.currentPage);
+        setStatus('PDF読込＆抽出完了（ページ送り可）');
+      } catch (e) {
+        reportError('[ERR-PAGE-PREV]', '前ページ描画中にエラーが発生しました。', e);
+      }
+      updatePageControls();
+    });
+
+    next.addEventListener('click', async () => {
+      if (!state.pdfDoc) return;
+      if (state.currentPage >= state.pageCount) return;
+      state.currentPage++;
+      try {
+        setStatus(`ページ ${state.currentPage} を描画中...`);
+        await renderPageWithGuides(state.currentPage);
+        setStatus('PDF読込＆抽出完了（ページ送り可）');
+      } catch (e) {
+        reportError('[ERR-PAGE-NEXT]', '次ページ描画中にエラーが発生しました。', e);
+      }
+      updatePageControls();
+    });
+  }
+
+  function updatePageControls() {
+    const info = document.getElementById('page-info');
+    const prev = document.getElementById('btn-prev-page');
+    const next = document.getElementById('btn-next-page');
+
+    if (!info || !prev || !next) return;
+
+    if (!state.pdfDoc) {
+      info.textContent = '- / -';
+      prev.disabled = true;
+      next.disabled = true;
+    } else {
+      info.textContent = `${state.currentPage} / ${state.pageCount}`;
+      prev.disabled = (state.currentPage <= 1);
+      next.disabled = (state.currentPage >= state.pageCount);
     }
   }
 
@@ -712,9 +794,9 @@
       (async () => {
         try {
           setStatus('パラメータ変更により再描画・再抽出中...');
-          await renderPageWithGuides(1);
+          await renderPageWithGuides(state.currentPage);
           await extractAllPages();
-          setStatus('PDF読込＆抽出完了（1ページ目表示中）');
+          setStatus('PDF読込＆抽出完了（ページ送り可）');
         } catch (e) {
           reportError('[ERR-05]', 'パラメータ変更時の再抽出中にエラーが発生しました。', e);
         }
@@ -772,28 +854,40 @@
   //========== 抽出結果UIの更新 ==========
 
   function updateHeaderInfo(ymdText, placeText, vendorText) {
+    state.header = {
+      ymd: ymdText || '-',
+      place: placeText || '-',
+      vendor: vendorText || '-'
+    };
+
     const hi = document.getElementById('header-info');
     hi.innerHTML =
-      `年月分: ${ymdText}<br>` +
-      `納地: ${placeText}<br>` +
-      `業者名: ${vendorText}`;
+      `年月分: ${state.header.ymd}<br>` +
+      `納地: ${state.header.place}<br>` +
+      `業者名: ${state.header.vendor}`;
 
     const fi = document.getElementById('file-info');
     if (fi) {
-      const html = fi.innerHTML.replace(/年月分: .*?<br>/, `年月分: ${ymdText}<br>`)
-                               .replace(/納地: .*?<br>/, `納地: ${placeText}<br>`)
-                               .replace(/業者名: .*?$/, `業者名: ${vendorText}`);
+      const html = fi.innerHTML.replace(/年月分: .*?<br>/, `年月分: ${state.header.ymd}<br>`)
+                               .replace(/納地: .*?<br>/, `納地: ${state.header.place}<br>`)
+                               .replace(/業者名: .*?$/, `業者名: ${state.header.vendor}`);
       fi.innerHTML = html;
     }
   }
 
   function updateSumInfo(taxable, tax, total) {
+    state.sum = {
+      taxable: taxable || '-',
+      tax: tax || '-',
+      total: total || '-'
+    };
+
     const si = document.getElementById('sum-info');
     si.textContent =
 `[最終ページ集計]
-課税対象額: ${taxable}
-消費税: ${tax}
-合計: ${total}`;
+課税対象額: ${state.sum.taxable}
+消費税: ${state.sum.tax}
+合計: ${state.sum.total}`;
   }
 
   function clearDetailTable() {
@@ -847,6 +941,8 @@
           sumDone = true;
         }
       }
+
+      state.details = allRows;
 
       clearDetailTable();
       allRows.forEach((row, idx) => {
@@ -1068,7 +1164,97 @@
     const v3 = findValueSameLine(['合　計','合計']) || findNumericBelow(['合　計','合計']);
     if (v3) total = v3;
 
-    updateSumInfo(taxable, tax, total);
+    // ★ 合計だけは「¥」・「\」・末尾の「-」を削除して表示用に整形
+    function normalizeTotal(text) {
+      if (!text) return text;
+      let t = text;
+      t = t.replace(/[¥￥\\]/g, ''); // 通貨記号・バックスラッシュ除去
+      t = t.replace(/-+$/g, '');     // 末尾のマイナス群
+      t = t.trim();
+      return t;
+    }
+
+    const displayTotal = normalizeTotal(total);
+
+    updateSumInfo(taxable, tax, displayTotal);
+  }
+
+  //========== 請求書データコピー ==========
+
+  function initCopyButton() {
+    const btn = document.getElementById('btn-copy-invoice');
+    btn.addEventListener('click', () => {
+      copyInvoiceData();
+    });
+  }
+
+  function copyInvoiceData() {
+    try {
+      const h = state.header || {};
+      const s = state.sum || {};
+      const details = state.details || [];
+
+      const lines = [];
+
+      lines.push('[ヘッダー]');
+      lines.push(`年月分: ${h.ymd || '-'}`);
+      lines.push(`納地: ${h.place || '-'}`);
+      lines.push(`業者名: ${h.vendor || '-'}`);
+      lines.push('');
+      lines.push('[明細]');
+      lines.push('idx\tNo\t品名\t単位\t合計数量\t契約単価\t金額');
+      details.forEach((row, idx) => {
+        lines.push([
+          idx + 1,
+          row.no || '',
+          row.name || '',
+          row.unit || '',
+          row.qty || '',
+          row.price || '',
+          row.amount || ''
+        ].join('\t'));
+      });
+      lines.push('');
+      lines.push('[最終ページ集計]');
+      lines.push(`課税対象額: ${s.taxable || '-'}`);
+      lines.push(`消費税: ${s.tax || '-'}`);
+      lines.push(`合計: ${s.total || '-'}`);
+
+      const text = lines.join('\n');
+
+      const doCopyWithExecCommand = () => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-1000px';
+        ta.style.top = '-1000px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      };
+
+      const doCopy = async () => {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          doCopyWithExecCommand();
+        }
+      };
+
+      Promise.resolve(doCopy())
+        .then(() => {
+          setStatus('請求書データをクリップボードにコピーしました。');
+          alert('コピーしました。');
+        })
+        .catch(err => {
+          reportError('[ERR-COPY]', 'クリップボードへのコピーに失敗しました。', err);
+        });
+
+    } catch (e) {
+      reportError('[ERR-COPY-EX]', 'コピー処理中にエラーが発生しました。', e);
+    }
   }
 </script>
 </body>
