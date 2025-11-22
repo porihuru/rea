@@ -1,211 +1,1075 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <!-- pdf.js ローカル最小テスト（テキスト抽出のみ）
-       v2025.11.21-srv1 / Edge95 file:// & http:// 想定
-       必要ファイル: 本HTML と 同じフォルダの pdf.min.js（v2.16.105）
-  -->
   <meta charset="utf-8">
-  <title>pdf.js ローカル最小テスト（テキスト抽出のみ）</title>
+  <title>納入台帳PDF デバッグ抽出ツール</title>
   <style>
     body{
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Yu Gothic", sans-serif;
-      font-size: 14px;
-      margin: 8px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin:0;
+      padding:0;
+      background:#f5f5f5;
     }
-    h1{
-      font-size: 18px;
-      margin: 0 0 4px;
+    header{
+      background:#333;
+      color:#fff;
+      padding:8px 16px;
+      font-size:14px;
     }
-    .version{
-      font-size: 12px;
-      color: #555;
-      margin-bottom: 6px;
+    main{
+      padding:8px;
     }
-    .row{
-      margin-bottom: 6px;
+    .flex-row{
+      display:flex;
+      gap:8px;
+      align-items:flex-start;
+      flex-wrap:wrap;
+    }
+    .panel{
+      background:#fff;
+      border-radius:4px;
+      padding:8px;
+      box-shadow:0 0 4px rgba(0,0,0,0.1);
+      box-sizing:border-box;
+    }
+    #left-panel{
+      flex:0 0 360px;
+      min-width:320px;
+      max-width:380px;
+    }
+    #center-panel{
+      flex:1 1 500px;
+      min-width:360px;
+      text-align:center;
+    }
+    h2{
+      margin:4px 0;
+      font-size:15px;
+    }
+    h3{
+      margin:4px 0;
+      font-size:13px;
     }
     label{
-      margin-right: 4px;
+      font-size:11px;
+      display:block;
+      margin-top:4px;
     }
-    button{
-      padding: 2px 8px;
-      margin-left: 4px;
+    input[type="number"], input[type="range"]{
+      width:100%;
+      box-sizing:border-box;
     }
-    textarea{
-      width: 100%;
-      box-sizing: border-box;
-      font-family: "Consolas","Menlo","Ricty Diminished","MS Gothic",monospace;
+    #drop-zone{
+      border:2px dashed #999;
+      border-radius:4px;
+      padding:12px;
+      text-align:center;
+      font-size:12px;
+      color:#555;
+      margin-bottom:8px;
+      background:#fafafa;
     }
-    #logArea{
-      height: 180px;
-      background:#000;
-      color:#0f0;
+    #drop-zone.dragover{
+      border-color:#0078d4;
+      background:#e7f3ff;
+      color:#004e8c;
+    }
+    #file-info{
+      font-size:12px;
+      line-height:1.4;
+      margin-top:4px;
+    }
+    #canvas-container{
+      background:#777;
+      display:inline-block;
       padding:4px;
-      white-space:pre;
-      overflow:auto;
+      border-radius:4px;
     }
-    #textArea{
-      height: 260px;
-      margin-top: 6px;
+    #pdf-canvas{
+      background:#fff;
+      max-width:100%;
+    }
+    #header-info, #sum-info{
+      font-size:12px;
+      line-height:1.4;
+      white-space:pre-line;
+    }
+    table{
+      border-collapse:collapse;
+      width:100%;
+      font-size:11px;
+    }
+    th, td{
+      border:1px solid #ccc;
+      padding:2px 4px;
+      text-align:left;
+      white-space:nowrap;
+    }
+    th{
+      background:#eee;
+      position:sticky;
+      top:0;
+      z-index:1;
+    }
+    #detail-table-container{
+      max-height:200px;
+      overflow:auto;
+      border:1px solid #ccc;
+      margin-top:4px;
+    }
+    .small-note{
+      font-size:11px;
+      color:#666;
+    }
+    .param-group{
+      border:1px solid #ddd;
+      border-radius:4px;
+      padding:4px;
+      margin-bottom:6px;
+    }
+    .param-row{
+      display:flex;
+      gap:4px;
+      align-items:center;
+      margin-top:2px;
+    }
+    .param-row span{
+      font-size:10px;
+      white-space:nowrap;
+      flex:0 0 auto;
+      min-width:40px;
+    }
+    .param-row input[type="number"]{
+      flex:0 0 70px;
+    }
+    .param-row input[type="range"]{
+      flex:1 1 auto;
+    }
+    .status{
+      font-size:11px;
+      color:#333;
+      margin-top:4px;
+      white-space:pre-line;
     }
   </style>
 </head>
 <body>
-  <h1>pdf.js ローカル最小テスト（テキスト抽出のみ）</h1>
-  <div class="version">v2025.11.21-srv1 / Edge95 向け</div>
+<header>
+  納入台帳PDF デバッグ抽出ツール（ドラッグ＆ドロップで1ファイルのみ解析）
+</header>
+<main>
+  <div class="flex-row">
+    <!-- 左：① PDF読込 ＋ ②パラメータ ＋ ④抽出結果 -->
+    <section id="left-panel" class="panel">
+      <h2>① PDF読込</h2>
+      <div id="drop-zone">
+        ここに納入台帳PDFをドラッグ＆ドロップ<br>
+        または<input type="file" id="file-input" accept="application/pdf" style="margin-top:4px;font-size:11px;">
+      </div>
+      <div id="file-info">
+        ファイル名: -<br>
+        ページ数: -<br>
+        年月分: -<br>
+        納地: -<br>
+        業者名: -
+      </div>
 
-  <div class="row">
-    <label for="pdfFile">PDFファイル選択：</label>
-    <input type="file" id="pdfFile" accept="application/pdf">
-    <button id="clearBtn">クリア</button>
+      <h2 style="margin-top:8px;">② デバッグパラメータ</h2>
+      <div class="small-note">
+        ※値を変えるとキャンバス上のガイド線と抽出結果が更新されます。<br>
+        （YはPDF座標系：左下が0）
+      </div>
+
+      <!-- [CFG-01] 抽出パラメータ -->
+      <div id="param-container">
+        <div class="param-group">
+          <h3>縦方向（Y）範囲</h3>
+          <label>テーブル上端Y（tableYTop）</label>
+          <div class="param-row">
+            <span>Y上端</span>
+            <input type="number" id="param-tableYTop" step="1">
+            <input type="range" id="range-tableYTop" min="0" max="900" step="1">
+          </div>
+          <label>テーブル下端Y（tableYBottom）</label>
+          <div class="param-row">
+            <span>Y下端</span>
+            <input type="number" id="param-tableYBottom" step="1">
+            <input type="range" id="range-tableYBottom" min="0" max="900" step="1">
+          </div>
+          <label>行分割</label>
+          <div class="param-row">
+            <span>24分割</span>
+            <input type="number" id="param-rows24" min="1" max="48" step="1">
+          </div>
+          <div class="param-row">
+            <span>48分割</span>
+            <input type="number" id="param-rows48" min="1" max="96" step="1">
+          </div>
+
+          <!-- ヘッダー／集計エリアのY範囲 -->
+          <label>ヘッダーY範囲（年月分・業者名）</label>
+          <div class="param-row">
+            <span>Header上</span>
+            <input type="number" id="param-headerYTop" step="1">
+          </div>
+          <div class="param-row">
+            <span>Header下</span>
+            <input type="number" id="param-headerYBottom" step="1">
+          </div>
+
+          <label>集計Y範囲（最終ページ集計）</label>
+          <div class="param-row">
+            <span>集計上</span>
+            <input type="number" id="param-sumYTop" step="1">
+          </div>
+          <div class="param-row">
+            <span>集計下</span>
+            <input type="number" id="param-sumYBottom" step="1">
+          </div>
+        </div>
+
+        <div class="param-group">
+          <h3>横方向（X）列範囲</h3>
+          <div class="param-row">
+            <span>No最小</span>
+            <input type="number" id="param-noXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>No最大</span>
+            <input type="number" id="param-noXMax" step="1">
+          </div>
+
+          <div class="param-row">
+            <span>品名最小</span>
+            <input type="number" id="param-nameXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>品名最大</span>
+            <input type="number" id="param-nameXMax" step="1">
+          </div>
+
+          <div class="param-row">
+            <span>単位最小</span>
+            <input type="number" id="param-unitXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>単位最大</span>
+            <input type="number" id="param-unitXMax" step="1">
+          </div>
+
+          <div class="param-row">
+            <span>数量最小</span>
+            <input type="number" id="param-qtyXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>数量最大</span>
+            <input type="number" id="param-qtyXMax" step="1">
+          </div>
+
+          <div class="param-row">
+            <span>単価最小</span>
+            <input type="number" id="param-priceXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>単価最大</span>
+            <input type="number" id="param-priceXMax" step="1">
+          </div>
+
+          <div class="param-row">
+            <span>金額最小</span>
+            <input type="number" id="param-amountXMin" step="1">
+          </div>
+          <div class="param-row">
+            <span>金額最大</span>
+            <input type="number" id="param-amountXMax" step="1">
+          </div>
+        </div>
+      </div>
+
+      <div class="status" id="status-text">PDF未読込</div>
+
+      <!-- ④ 抽出結果：②の下に配置 -->
+      <h2 style="margin-top:8px;">④ 抽出結果プレビュー</h2>
+
+      <h3>ヘッダー情報</h3>
+      <div id="header-info">
+        年月分: -<br>
+        納地: -<br>
+        業者名: -
+      </div>
+
+      <h3 style="margin-top:8px;">明細テーブル</h3>
+      <div id="detail-table-container">
+        <table id="detail-table">
+          <thead>
+            <tr>
+              <th>idx</th>
+              <th>No</th>
+              <th>品名</th>
+              <th>単位</th>
+              <th>合計数量</th>
+              <th>契約単価</th>
+              <th>金額</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:8px;">最終ページ集計</h3>
+      <div id="sum-info">
+[最終ページ集計]
+課税対象額: -
+消費税: -
+合計: -
+      </div>
+      <div class="small-note" style="margin-top:4px;">
+        ※ヘッダー／明細／最終ページ集計は [EX-HEAD-01] / [EX-DETAIL-01/02] / [EX-SUM-01] で座標＋テキストから自動抽出。
+      </div>
+    </section>
+
+    <!-- 右：PDFキャンバスだけ大きく -->
+    <section id="center-panel" class="panel">
+      <h2>③ PDFプレビュー（1ページ目＋ガイド線）</h2>
+      <div id="canvas-container">
+        <canvas id="pdf-canvas"></canvas>
+      </div>
+      <div class="small-note">
+        緑：24分割（明細行） / 青：48分割（単価・金額の2段）<br>
+        赤：列境界（No / 品名 / 単位 / 数量 / 単価 / 金額）<br>
+        オレンジ：ヘッダーY範囲 / 紫：集計Y範囲
+      </div>
+    </section>
   </div>
+</main>
 
-  <div class="row">
-    <textarea id="logArea" readonly>ここにログを表示します。</textarea>
-  </div>
+<script src="pdf.min.js"></script>
+<script>
+  //========== エラー表示ユーティリティ ==========
 
-  <div class="row">
-    <textarea id="textArea" placeholder="ここにPDFから抽出したテキストを表示します。"></textarea>
-  </div>
+  function setStatus(msg) {
+    const el = document.getElementById('status-text');
+    if (el) el.textContent = msg;
+  }
 
-  <!-- [LIB] pdf.js 本体（同じフォルダに pdf.min.js を配置） -->
-  <script src="pdf.min.js"></script>
-
-  <script>
-    //============================================================
-    // [ENV-01] structuredClone ポリフィル（Edge95 対応）
-    //============================================================
-    if (typeof structuredClone !== "function") {
-      console.log("structuredClone が無いので簡易ポリフィルを定義します。");
-      window.structuredClone = function (obj) {
-        return JSON.parse(JSON.stringify(obj));
-      };
+  function reportError(code, msg, err) {
+    console.error(code, msg, err);
+    const el = document.getElementById('status-text');
+    if (!el) return;
+    let detail = '';
+    if (err) {
+      if (err.message) detail = err.message;
+      else detail = String(err);
     }
+    el.textContent =
+      `エラー: ${code}\n` +
+      `${msg}` +
+      (detail ? `\n詳細: ${detail}` : '') +
+      `\n\n※この画面をスクリーンショットしてチャットに送ってください。`;
+  }
 
-    //============================================================
-    // [APP-01] ユーティリティ
-    //============================================================
-    const logArea  = document.getElementById("logArea");
-    const textArea = document.getElementById("textArea");
-    const fileInput = document.getElementById("pdfFile");
-    const clearBtn  = document.getElementById("clearBtn");
+  //========== グローバル状態管理 ==========
 
-    function logLine(msg) {
-      const now = new Date();
-      const t = now.toTimeString().slice(0,8);
-      logArea.value += "\n[" + t + "] " + msg;
-      logArea.scrollTop = logArea.scrollHeight;
-      console.log(msg);
-    }
+  const state = {
+    pdfDoc: null,
+    pdfData: null,
+    pageCount: 0,
+    viewport: null,
+    scale: 1.3,
+    useWorker: true,
+    params: {
+      // 明細テーブル
+      tableYTop: 474,
+      tableYBottom: 42,
+      rows24: 24,
+      rows48: 48,
+      // ヘッダー＆集計エリア（初期値はざっくり）
+      headerYTop: 900,
+      headerYBottom: 600,
+      sumYTop: 200,
+      sumYBottom: 0,
+      // 列のX
+      noXMin: 71,
+      noXMax: 88,
+      nameXMin: 88,
+      nameXMax: 142,
+      unitXMin: 142,
+      unitXMax: 142,
+      qtyXMin: 742,
+      qtyXMax: 782,
+      priceXMin: 782,
+      priceXMax: 821,
+      amountXMin: 782,
+      amountXMax: 821
+    },
+    redrawTimer: null
+  };
 
-    function resetLog() {
-      logArea.value = "pdf.js ローカル最小テスト開始。\n" +
-        "OK: pdf.min.js 読み込み完了？  pdfjsLib.version = " + (window.pdfjsLib && pdfjsLib.version) + "\n" +
-        "location.protocol = " + location.protocol + "（file:// or http:// 想定）\n" +
-        "備考: worker は使わず main thread だけでテキスト抽出します。";
-    }
+  //========== 初期化 ==========
 
-    resetLog();
+  document.addEventListener('DOMContentLoaded', () => {
+    try {
+      const isFile = (location.protocol === 'file:');
 
-    //============================================================
-    // [APP-02] PDF 読み込み & テキスト抽出
-    //============================================================
-    async function handlePdfFile(file) {
-      textArea.value = "";
-      if (!file) {
-        logLine("PDFファイルが選択されていません。");
+      if (!window.pdfjsLib) {
+        reportError(
+          '[ERR-01]',
+          'pdfjsLib が定義されていません。pdf.min.js / pdf.worker.min.js の配置と <script src="pdf.min.js"> を確認してください。',
+          null
+        );
         return;
       }
 
-      logLine("--- PDFテスト開始 ---");
-      logLine("ファイル名: " + file.name + " / サイズ: " + file.size + " bytes");
+      if (isFile) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+        state.useWorker = false;
+      } else {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+        state.useWorker = true;
+      }
 
-      // FileReader で ArrayBuffer に読み込む
-      const reader = new FileReader();
+      initDragAndDrop();
+      initParamsUI();
+      setStatus('PDF未読込');
 
-      reader.onerror = function (ev) {
-        logLine("ERROR: FileReader でエラーが発生しました。");
-        console.error(ev);
+    } catch (e) {
+      reportError('[ERR-INIT]', '初期化中にエラーが発生しました。', e);
+    }
+  });
+
+  //========== ドラッグ＆ドロップ / ファイル入力 ==========
+
+  function initDragAndDrop() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    ['dragenter','dragover'].forEach(evName => {
+      dropZone.addEventListener(evName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave','drop'].forEach(evName => {
+      dropZone.addEventListener(evName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+      });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        handleFile(files[0]);
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleFile(file);
+    });
+  }
+
+  function handleFile(file) {
+    if (file.type !== 'application/pdf') {
+      alert('PDFファイルを選択してください。');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      state.pdfData = new Uint8Array(e.target.result);
+      loadPdfDocument(file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  //========== PDF読み込み＆1ページ目レンダリング ==========
+
+  async function loadPdfDocument(fileName) {
+    setStatus('PDF読み込み中...');
+
+    try {
+      const loadingTask = pdfjsLib.getDocument({
+        data: state.pdfData,
+        disableWorker: !state.useWorker
+      });
+      const pdfDoc = await loadingTask.promise;
+      state.pdfDoc = pdfDoc;
+      state.pageCount = pdfDoc.numPages;
+
+      const fi = document.getElementById('file-info');
+      fi.innerHTML =
+        `ファイル名: ${fileName}<br>` +
+        `ページ数: ${pdfDoc.numPages}<br>` +
+        `年月分: （抽出中）<br>` +
+        `納地: （抽出中）<br>` +
+        `業者名: （抽出中）`;
+
+      await renderPageWithGuides(1);
+
+      setStatus('PDF読込完了（抽出中）...');
+      await extractAllPages();
+      setStatus('PDF読込＆抽出完了（1ページ目表示中）');
+
+    } catch (err) {
+      reportError('[ERR-02]', 'PDFの読み込み中にエラーが発生しました。', err);
+    }
+  }
+
+  //========== キャンバス描画 ==========
+
+  async function renderPageWithGuides(pageNum) {
+    try {
+      if (!state.pdfDoc) return;
+      const page = await state.pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: state.scale });
+      state.viewport = viewport;
+
+      const canvas = document.getElementById('pdf-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      ctx.save();
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.restore();
+
+      const renderContext = {
+        canvasContext: ctx,
+        viewport: viewport
       };
+      const renderTask = page.render(renderContext);
+      await renderTask.promise;
 
-      reader.onload = async function (ev) {
-        try {
-          const arrayBuffer = ev.target.result;
-          logLine("arrayBuffer.byteLength = " + arrayBuffer.byteLength);
+      drawGuides();
+    } catch (err) {
+      reportError('[ERR-03]', 'PDFページの描画中にエラーが発生しました。', err);
+    }
+  }
 
-          const uint8 = new Uint8Array(arrayBuffer);
-          logLine("Uint8Array.length = " + uint8.length);
+  function pdfPointToCanvas(x, y) {
+    const v = state.viewport;
+    if (!v) return { x:0, y:0 };
+    const t = v.transform;
+    const xC = t[0] * x + t[2] * y + t[4];
+    const yC = t[1] * x + t[3] * y + t[5];
+    return { x:xC, y:yC };
+  }
 
-          if (!window.pdfjsLib) {
-            logLine("ERROR: pdfjsLib が見つかりません。pdf.min.js の配置を確認してください。");
-            return;
-          }
+  function drawGuides() {
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const p = state.params;
+    const v = state.viewport;
+    if (!v) return;
 
-          // worker を完全に無効化して main thread のみで動かす
-          if (pdfjsLib.GlobalWorkerOptions) {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = null;
-          }
-          if (typeof pdfjsLib.disableWorker === "boolean") {
-            pdfjsLib.disableWorker = true;
-          }
+    const yTop = p.tableYTop;
+    const yBottom = p.tableYBottom;
+    const rows24 = p.rows24;
+    const rows48 = p.rows48;
+    const totalHeight = yTop - yBottom;
 
-          const loadingTask = pdfjsLib.getDocument({
-            data: uint8,
-            disableWorker: true,    // 念のためオプション側でも指定
-            stopAtErrors: true
-          });
+    ctx.save();
+    ctx.lineWidth = 0.7;
 
-          let pdf;
-          try {
-            pdf = await loadingTask.promise;
-          } catch (e) {
-            logLine("ERROR: getDocument で例外が発生しました。");
-            logLine(e && (e.message || e.toString()));
-            console.error(e);
-            logLine("--- PDFテスト異常終了 ---");
-            return;
-          }
-
-          logLine("PDF 読み込み成功。ページ数 = " + pdf.numPages);
-
-          let fullText = "";
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(it => it.str).join("");
-            fullText += "---- page " + pageNum + " ----\n" + pageText + "\n\n";
-          }
-
-          textArea.value = fullText;
-          logLine("テキスト抽出完了。全体文字数 = " + fullText.length);
-          logLine("--- PDFテスト正常終了 ---");
-        } catch (err) {
-          logLine("ERROR: PDF読み込みまたはテキスト抽出中に例外が発生しました。");
-          logLine(err && (err.message || err.toString()));
-          console.error(err);
-          logLine("--- PDFテスト異常終了 ---");
-        }
-      };
-
-      // 読み込み開始
-      reader.readAsArrayBuffer(file);
+    // 緑：24分割（明細行）
+    ctx.strokeStyle = 'rgba(0,160,0,0.8)';
+    for (let i = 0; i <= rows24; i++) {
+      const y = yBottom + (totalHeight * i / rows24);
+      const p1 = pdfPointToCanvas(0, y);
+      const p2 = pdfPointToCanvas(v.width, y);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
     }
 
-    //============================================================
-    // [APP-03] イベント設定
-    //============================================================
-    fileInput.addEventListener("change", (ev) => {
-      const file = ev.target.files && ev.target.files[0];
-      handlePdfFile(file);
+    // 青：48分割（単価・金額用）
+    ctx.strokeStyle = 'rgba(0,0,200,0.6)';
+    for (let i = 0; i <= rows48; i++) {
+      const y = yBottom + (totalHeight * i / rows48);
+      const p1 = pdfPointToCanvas(0, y);
+      const p2 = pdfPointToCanvas(v.width, y);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+
+    // 赤：列境界
+    ctx.strokeStyle = 'rgba(200,0,0,0.9)';
+    const columns = [
+      {min:p.noXMin,     max:p.noXMax},
+      {min:p.nameXMin,   max:p.nameXMax},
+      {min:p.unitXMin,   max:p.unitXMax},
+      {min:p.qtyXMin,    max:p.qtyXMax},
+      {min:p.priceXMin,  max:p.priceXMax},
+      {min:p.amountXMin, max:p.amountXMax}
+    ];
+    columns.forEach(col => {
+      [col.min, col.max].forEach(xx => {
+        const p1 = pdfPointToCanvas(xx, yBottom);
+        const p2 = pdfPointToCanvas(xx, yTop);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      });
     });
 
-    clearBtn.addEventListener("click", () => {
-      fileInput.value = "";
-      textArea.value = "";
-      resetLog();
-      logLine("クリアしました。");
+    // オレンジ：ヘッダーY範囲
+    if (p.headerYTop !== undefined && p.headerYBottom !== undefined) {
+      const hTop = Math.max(p.headerYTop, p.headerYBottom);
+      const hBottom = Math.min(p.headerYTop, p.headerYBottom);
+      ctx.strokeStyle = 'rgba(255,165,0,0.9)';
+      [hTop, hBottom].forEach(y => {
+        const p1 = pdfPointToCanvas(0, y);
+        const p2 = pdfPointToCanvas(v.width, y);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      });
+    }
+
+    // 紫：集計Y範囲
+    if (p.sumYTop !== undefined && p.sumYBottom !== undefined) {
+      const sTop = Math.max(p.sumYTop, p.sumYBottom);
+      const sBottom = Math.min(p.sumYTop, p.sumYBottom);
+      ctx.strokeStyle = 'rgba(160,0,160,0.9)';
+      [sTop, sBottom].forEach(y => {
+        const p1 = pdfPointToCanvas(0, y);
+        const p2 = pdfPointToCanvas(v.width, y);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      });
+    }
+
+    ctx.restore();
+  }
+
+  //========== パラメータUIの初期化＆連動 ==========
+
+  function initParamsUI() {
+    const ids = [
+      'tableYTop','tableYBottom','rows24','rows48',
+      'headerYTop','headerYBottom','sumYTop','sumYBottom',
+      'noXMin','noXMax',
+      'nameXMin','nameXMax',
+      'unitXMin','unitXMax',
+      'qtyXMin','qtyXMax',
+      'priceXMin','priceXMax',
+      'amountXMin','amountXMax'
+    ];
+    ids.forEach(key => {
+      const el = document.getElementById('param-' + key);
+      if (!el) return;
+      el.value = state.params[key];
+      el.addEventListener('input', () => {
+        state.params[key] = Number(el.value);
+        syncRangeWithNumber(key);
+        scheduleRedraw();
+      });
     });
-  </script>
+
+    const rTop = document.getElementById('range-tableYTop');
+    const rBottom = document.getElementById('range-tableYBottom');
+    if (rTop && rBottom) {
+      rTop.value = state.params.tableYTop;
+      rBottom.value = state.params.tableYBottom;
+      rTop.addEventListener('input', () => {
+        const val = Number(rTop.value);
+        state.params.tableYTop = val;
+        document.getElementById('param-tableYTop').value = val;
+        scheduleRedraw();
+      });
+      rBottom.addEventListener('input', () => {
+        const val = Number(rBottom.value);
+        state.params.tableYBottom = val;
+        document.getElementById('param-tableYBottom').value = val;
+        scheduleRedraw();
+      });
+    }
+  }
+
+  function syncRangeWithNumber(key) {
+    if (key === 'tableYTop') {
+      const r = document.getElementById('range-tableYTop');
+      if (r) r.value = state.params.tableYTop;
+    } else if (key === 'tableYBottom') {
+      const r = document.getElementById('range-tableYBottom');
+      if (r) r.value = state.params.tableYBottom;
+    }
+  }
+
+  function scheduleRedraw() {
+    if (!state.pdfDoc) return;
+    if (state.redrawTimer) clearTimeout(state.redrawTimer);
+    state.redrawTimer = setTimeout(() => {
+      (async () => {
+        try {
+          setStatus('パラメータ変更により再描画・再抽出中...');
+          await renderPageWithGuides(1);
+          await extractAllPages();
+          setStatus('PDF読込＆抽出完了（1ページ目表示中）');
+        } catch (e) {
+          reportError('[ERR-05]', 'パラメータ変更時の再抽出中にエラーが発生しました。', e);
+        }
+      })();
+    }, 150);
+  }
+
+  //========== 行構築ヘルパ ==========
+
+  function buildLines(items) {
+    const sorted = [...items].sort((a,b) => b.y - a.y);
+    const lines = [];
+    const tol = 2;
+
+    sorted.forEach(it => {
+      let line = lines.find(l => Math.abs(l.y - it.y) <= tol);
+      if (!line) {
+        line = { y: it.y, items: [] };
+        lines.push(line);
+      }
+      line.items.push(it);
+    });
+
+    lines.forEach(l => {
+      l.items.sort((a,b) => a.x - b.x);
+      l.text = l.items.map(i => i.str).join('');
+    });
+
+    lines.sort((a,b) => b.y - a.y);
+    return lines;
+  }
+
+  function splitLineByGap(line) {
+    if (!line || !line.items || line.items.length === 0) {
+      return { leftText:'', rightText:'' };
+    }
+    const its = line.items;
+    if (its.length === 1) {
+      return { leftText: its[0].str, rightText: '' };
+    }
+    let maxGap = 0;
+    let splitIndex = its.length - 1;
+    for (let i = 0; i < its.length - 1; i++) {
+      const gap = its[i+1].x - its[i].x;
+      if (gap > maxGap) {
+        maxGap = gap;
+        splitIndex = i;
+      }
+    }
+    const leftText = its.slice(0, splitIndex + 1).map(it => it.str).join('');
+    const rightText = its.slice(splitIndex + 1).map(it => it.str).join('');
+    return { leftText, rightText };
+  }
+
+  //========== 抽出結果UIの更新 ==========
+
+  function updateHeaderInfo(ymdText, placeText, vendorText) {
+    const hi = document.getElementById('header-info');
+    hi.innerHTML =
+      `年月分: ${ymdText}<br>` +
+      `納地: ${placeText}<br>` +
+      `業者名: ${vendorText}`;
+
+    const fi = document.getElementById('file-info');
+    if (fi) {
+      const html = fi.innerHTML.replace(/年月分: .*?<br>/, `年月分: ${ymdText}<br>`)
+                               .replace(/納地: .*?<br>/, `納地: ${placeText}<br>`)
+                               .replace(/業者名: .*?$/, `業者名: ${vendorText}`);
+      fi.innerHTML = html;
+    }
+  }
+
+  function updateSumInfo(taxable, tax, total) {
+    const si = document.getElementById('sum-info');
+    si.textContent =
+`[最終ページ集計]
+課税対象額: ${taxable}
+消費税: ${tax}
+合計: ${total}`;
+  }
+
+  function clearDetailTable() {
+    const tbody = document.querySelector('#detail-table tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+  }
+
+  function addDetailRow(idx, no, name, unit, qty, price, amount) {
+    const tbody = document.querySelector('#detail-table tbody');
+    const tr = document.createElement('tr');
+    [idx, no, name, unit, qty, price, amount].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v != null ? String(v) : '';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
+
+  //========== 抽出ロジック本体 ==========
+
+  async function extractAllPages() {
+    try {
+      if (!state.pdfDoc) return;
+
+      const allRows = [];
+      let headerDone = false;
+      let sumDone = false;
+
+      for (let pageNum = 1; pageNum <= state.pageCount; pageNum++) {
+        const page = await state.pdfDoc.getPage(pageNum);
+        const content = await page.getTextContent();
+        const items = content.items.map(i => ({
+          str: i.str,
+          x: i.transform[4],
+          y: i.transform[5]
+        })).filter(it => it.str && it.str.trim() !== '');
+
+        // [EX-HEAD-01] 1ページ目ヘッダー
+        if (!headerDone && pageNum === 1) {
+          extractHeaderFromItems(items);
+          headerDone = true;
+        }
+
+        // [EX-DETAIL-01/02] 明細
+        extractDetailsFromItems(items, pageNum, allRows);
+
+        // [EX-SUM-01] 最終ページ集計
+        if (!sumDone && pageNum === state.pageCount) {
+          extractSumFromItems(items);
+          sumDone = true;
+        }
+      }
+
+      clearDetailTable();
+      allRows.forEach((row, idx) => {
+        addDetailRow(
+          idx + 1,
+          row.no || '',
+          row.name || '',
+          row.unit || '',
+          row.qty || '',
+          row.price || '',
+          row.amount || ''
+        );
+      });
+    } catch (err) {
+      reportError('[ERR-04]', 'テキスト抽出中にエラーが発生しました。', err);
+    }
+  }
+
+  // [EX-HEAD-01] ヘッダー抽出（年月分・納地・業者名）
+  function extractHeaderFromItems(allItems) {
+    if (!allItems || allItems.length === 0) return;
+
+    const p = state.params;
+    let items;
+
+    if (p.headerYTop > p.headerYBottom) {
+      items = allItems.filter(i => i.y >= p.headerYBottom && i.y <= p.headerYTop);
+    } else {
+      const maxY = Math.max(...allItems.map(i => i.y));
+      const headerYMin = maxY - 200;
+      items = allItems.filter(i => i.y >= headerYMin);
+    }
+
+    const lines = buildLines(items);
+    let ym = '-';
+    let place = '-';
+    let vendor = '-';
+
+    // 年月分行
+    const ymLine = lines.find(l => l.text.includes('令和') && l.text.includes('年') && l.text.includes('月'));
+    if (ymLine) {
+      const m = ymLine.text.match(/令和[^年]*年[^月]*月/);
+      ym = m ? m[0].replace(/\s+/g, '') : ymLine.text.trim();
+    }
+
+    // 「納地： ～　業者名： ～」 が同一行にあるケースを優先
+    let combinedLine = lines.find(l =>
+      (l.text.includes('納地') || (l.text.includes('納') && l.text.includes('地'))) &&
+      (l.text.includes('業者') || (l.text.includes('業') && l.text.includes('者') && l.text.includes('名')))
+    );
+
+    if (combinedLine) {
+      const sp = splitLineByGap(combinedLine);
+      let left = sp.leftText || '';
+      let right = sp.rightText || '';
+
+      left = left.replace(/.*納\s*地[:：]?\s*/,'').trim();
+      right = right.replace(/.*業\s*者\s*名[:：]?\s*/,'').trim();
+
+      if (left) place = left;
+      if (right) vendor = right;
+    } else {
+      // フォールバック：業者名ラベルの次行を左右分割
+      const labelIdx = lines.findIndex(l =>
+        l.text.includes('業者名') ||
+        l.text.includes('業 者 名') ||
+        l.text.includes('業者 名')
+      );
+      if (labelIdx >= 0 && labelIdx + 1 < lines.length) {
+        const valLine = lines[labelIdx + 1];
+        const splitted = splitLineByGap(valLine);
+        place = (splitted.leftText || '').trim() || '-';
+        vendor = (splitted.rightText || '').trim() || '-';
+      }
+    }
+
+    updateHeaderInfo(ym, place, vendor);
+  }
+
+  // [EX-DETAIL-01/02] 明細抽出
+  function extractDetailsFromItems(items, pageNum, allRows) {
+    const p = state.params;
+    const yTop = p.tableYTop;
+    const yBottom = p.tableYBottom;
+    const height = yTop - yBottom;
+    if (height <= 0) return;
+
+    const rows24 = p.rows24;
+    const rows48 = p.rows48;
+    const pageRowMap = new Map();
+
+    const priceMinX = Math.min(p.priceXMin, p.amountXMin);
+    const priceMaxX = Math.max(p.priceXMax, p.amountXMax);
+
+    items.forEach(it => {
+      const x = it.x;
+      const y = it.y;
+      const s = it.str;
+      if (!s || !s.trim()) return;
+
+      if (y < yBottom || y > yTop) return;
+      if (x < p.noXMin || x > p.amountXMax) return;
+
+      let rowIndex24 = Math.floor(((yTop - y) / height) * rows24 + 1e-6);
+      rowIndex24 = Math.max(0, Math.min(rows24 - 1, rowIndex24));
+
+      if (rowIndex24 === 0) return; // タイトル行
+
+      let row = pageRowMap.get(rowIndex24);
+      if (!row) {
+        row = { no:'', name:'', unit:'', qty:'', price:'', amount:'' };
+        pageRowMap.set(rowIndex24, row);
+      }
+
+      function append(field, value) {
+        row[field] += value;
+      }
+
+      if (x >= p.noXMin && x <= p.noXMax) {
+        append('no', s);
+      } else if (x >= p.nameXMin && x <= p.nameXMax) {
+        append('name', s);
+      } else if (x >= p.unitXMin && x <= p.unitXMax) {
+        append('unit', s);
+      } else if (x >= p.qtyXMin && x <= p.qtyXMax) {
+        append('qty', s);
+      } else if (x >= priceMinX && x <= priceMaxX) {
+        let rowIndex48 = Math.floor(((yTop - y) / height) * rows48 + 1e-6);
+        rowIndex48 = Math.max(0, Math.min(rows48 - 1, rowIndex48));
+        const isUpper = (rowIndex48 % 2 === 0);
+        if (isUpper) append('price', s);
+        else append('amount', s);
+      }
+    });
+
+    const indices = Array.from(pageRowMap.keys()).sort((a,b) => a - b);
+    indices.forEach(idx => {
+      const r = pageRowMap.get(idx);
+      const hasContent =
+        (r.no && r.no.trim()) ||
+        (r.name && r.name.trim()) ||
+        (r.qty && r.qty.trim()) ||
+        (r.price && r.price.trim()) ||
+        (r.amount && r.amount.trim());
+
+      if (hasContent) {
+        allRows.push({
+          no: (r.no || '').trim(),
+          name: (r.name || '').trim(),
+          unit: (r.unit || '').trim(),
+          qty: (r.qty || '').trim(),
+          price: (r.price || '').trim(),
+          amount: (r.amount || '').trim()
+        });
+      }
+    });
+  }
+
+  // [EX-SUM-01] 最終ページ集計抽出
+  function extractSumFromItems(allItems) {
+    if (!allItems || allItems.length === 0) return;
+
+    const p = state.params;
+    let items;
+
+    if (p.sumYTop > p.sumYBottom) {
+      items = allItems.filter(i => i.y >= p.sumYBottom && i.y <= p.sumYTop);
+    } else {
+      const minY = Math.min(...allItems.map(i => i.y));
+      const sumYMax = minY + 250;
+      items = allItems.filter(i => i.y <= sumYMax);
+    }
+
+    const lines = buildLines(items);
+    let taxable = '-';
+    let tax = '-';
+    let total = '-';
+
+    // ラベルと同じ行から値を取る（¥65,288- など）
+    function findValueSameLine(labelTextVariants) {
+      const line = lines.find(l =>
+        labelTextVariants.some(v => l.text.includes(v))
+      );
+      if (!line) return null;
+
+      const m = line.text.match(/[¥￥]?[0-9０-９,，\.．\\\-]+-?/g);
+      if (m && m.length > 0) {
+        return m[m.length - 1].trim();
+      }
+      return null;
+    }
+
+    // フォールバック：ラベルの下の行から数値を探す
+    function findNumericBelow(labelTextVariants) {
+      const labelLine = lines.find(l =>
+        labelTextVariants.some(v => l.text.includes(v))
+      );
+      if (!labelLine) return null;
+      const labelY = labelLine.y;
+
+      const candidates = lines
+        .filter(l => l.y < labelY && /[0-9０-９]/.test(l.text))
+        .sort((a,b) => (labelY - a.y) - (labelY - b.y));
+
+      if (candidates.length === 0) return null;
+      const m = candidates[0].text.match(/[¥￥]?[0-9０-９,，\.．\\\-]+-?/g);
+      if (m && m.length > 0) {
+        return m[m.length - 1].trim();
+      }
+      return candidates[0].text.trim();
+    }
+
+    const v1 = findValueSameLine(['課税対象額']) || findNumericBelow(['課税対象額']);
+    if (v1) taxable = v1;
+
+    const v2 = findValueSameLine(['消費税']) || findNumericBelow(['消費税']);
+    if (v2) tax = v2;
+
+    const v3 = findValueSameLine(['合　計','合計']) || findNumericBelow(['合　計','合計']);
+    if (v3) total = v3;
+
+    updateSumInfo(taxable, tax, total);
+  }
+</script>
 </body>
 </html>
