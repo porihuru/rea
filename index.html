@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>納入台帳 貼り付けテキスト解析ツール v2025.11.23-paste-13</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 14px;
+      margin: 10px;
+      position: relative;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 6px;
+    }
+    textarea {
+      box-sizing: border-box;
+    }
+    #src {
+      width: 100%;
+      height: 80px; /* 貼り付け欄は約 1/3 高さ */
+    }
+    button {
+      margin-right: 6px;
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 8px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 3px 4px;
+      font-size: 12px;
+      vertical-align: top;
+    }
+    th {
+      background: #eee;
+    }
+    .small {
+      font-size: 11px;
+      color: #555;
+    }
+    #headerBox {
+      margin-top: 8px;
+      padding: 4px 6px;
+      border: 1px solid #999;
+      background: #fafafa;
+      white-space: pre-line;
+    }
+    #sumBox {
+      margin-top: 6px;
+      padding: 4px 6px;
+      border: 1px solid #999;
+      background: #f6f6f6;
+      white-space: pre-line;
+    }
+    .version-label {
+      position: absolute;
+      right: 10px;
+      top: 4px;
+      font-size: 11px;
+      color: #666;
+    }
+    .spec-input,
+    .name-input,
+    .unit-input,
+    .qty-input,
+    .price-input {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 12px;
+    }
+    .unit-input {
+      text-align: center;
+    }
+    .qty-input,
+    .price-input {
+      text-align: right;
+    }
+    #bulkSpecText {
+      font-size: 12px;
+      padding: 2px 4px;
+      width: 160px;
+      box-sizing: border-box;
+      margin-right: 4px;
+    }
+    #toText,
+    #vendorText {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 12px;
+    }
+    #billDate {
+      font-size: 12px;
+      padding: 2px 4px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <!-- 右上のバージョン情報 -->
+  <div class="version-label" id="versionLabel">
+    v2025.11.23-paste-13
+  </div>
+
+  <h1>納入台帳 貼り付けテキスト解析ツール</h1>
+  <p class="small">
+    PDFビューア等からテキストをコピーして下の欄に貼り付けると、<br>
+    自動で解析して「No / 品名 / 規格 / 単位 / 合計数量 / 契約単価 / 金額 / 備考」を抽出します。<br>
+    （解析ボタンは不要です）
+  </p>
+
+  <textarea id="src" placeholder="ここに納入台帳のテキストを貼り付け"></textarea>
+
+  <div style="margin-top: 6px;">
+    <button id="btnClear">クリア</button>
+  </div>
+
+  <!-- 納地・業者名などのヘッダー情報表示 -->
+  <div id="headerBox" class="small">
+    ここに納地・業者名ヘッダーが表示されます。
+  </div>
+
+  <!-- 日付入力（宛先の上） -->
+  <div id="dateBox" class="small" style="margin-top: 6px;">
+    日付:
+    <input id="billDate" type="date">
+  </div>
+
+  <!-- 宛先・業者名（宛先用）入力 -->
+  <div id="addressBox" class="small" style="margin-top: 6px;">
+    <div>
+      宛先（3行）:
+      <br>
+      <textarea id="toText" rows="3" placeholder="例）滝川駐屯地 会計隊 御中&#10;〒000-0000 滝川市...&#10;TEL 0123-45-6789"></textarea>
+    </div>
+    <div style="margin-top: 4px;">
+      業者名（5行）:
+      <br>
+      <textarea id="vendorText" rows="5" placeholder="1行目に業者名が自動入力されます。&#10;2行目以降に住所・TEL・担当者などを記入してください。"></textarea>
+    </div>
+  </div>
+
+  <div style="margin-top: 6px;">
+    <!-- 規格一括入力テキスト＋ボタン＋全データコピー＋印刷 -->
+    <input id="bulkSpecText" type="text" placeholder="規格欄 一括入力">
+    <button id="btnBulkSpec">規格欄一括入力</button>
+
+    <!-- ★ここを追加★ -->
+    <button id="btnGyousya">業者名等反映</button>
+    <!-- ★ここまで追加★ -->
+
+    <button id="btnCopyAll">全データコピー</button>
+
+    <!-- ★これを追加★ -->
+    <button id="btnPrintText">テキスト印刷</button>
+    <!-- ★ここまで追加★ -->
+
+    <button id="btnPrint">印刷</button>
+    <span id="copyMsg" class="small"></span>
+  </div>
+
+  <div id="summary" class="small" style="margin-top: 6px;"></div>
+  <div id="result"></div>
+  <div id="sumBox" class="small"></div>
+
+  <!-- 解析用パーサ -->
+  <script src="casks/ledger_paste_parser.js"></script>
+
+  <!-- ★ここを追加★ -->
+  <script src="gyousya.js"></script>
+  <!-- ★ここまで追加★ -->
+
+  <!-- 印刷用スクリプト -->
+  <script src="casks/print.js"></script>
+
+<script>
+// 納入台帳テキスト解析 メイン側 v2025.11.23-paste-13
+
+var VERSION_TEXT = '納入台帳テキスト解析 v2025.11.23-paste-13';
+var TAX_RATE = 0.08; // 消費税率（8%）
+
+// コピー用保持
+var lastHeaderText  = '';
+var lastDetailsText = '';
+var lastSummaryText = '';
+var currentRows     = []; // {vendor,no,name,spec,unit,qty,price,amount,note}
+
+// サマリ（原本値＋計算値）保持
+var originalSummary = null;
+
+// -------------------- 数値・文字列ユーティリティ --------------------
+
+// 計算用パース（カンマ・¥・\ を除去）
+function parseNumberForCalc(val) {
+  if (val === null || val === undefined) return NaN;
+  var s = String(val);
+  s = s.replace(/[¥\\,]/g, '');
+  s = s.replace(/^\s+|\s+$/g, '');
+  if (!s) return NaN;
+  var num = parseFloat(s);
+  if (isNaN(num)) return NaN;
+  return num;
+}
+
+// 3桁カンマ＋小数2桁
+function formatAmount(val) {
+  var num = parseFloat(val);
+  if (isNaN(num)) return '';
+  var fixed = num.toFixed(2);
+  var parts = fixed.split('.');
+  var intPart = parts[0];
+  var decPart = parts[1];
+  var re = /(\d+)(\d{3})/;
+  while (re.test(intPart)) {
+    intPart = intPart.replace(re, '$1' + ',' + '$2');
+  }
+  return intPart + '.' + decPart;
+}
+
+// 3桁カンマ・整数
+function formatInt(val) {
+  var num = parseInt(Math.floor(val), 10);
+  if (isNaN(num)) return '';
+  var s = String(num);
+  var re = /(\d+)(\d{3})/;
+  while (re.test(s)) {
+    s = s.replace(re, '$1' + ',' + '$2');
+  }
+  return s;
+}
+
+// yyyy-mm-dd → yyyy/mm/dd
+function formatDateForCopy(val) {
+  if (!val) return '';
+  var p = String(val).split('-');
+  if (p.length === 3) {
+    return p[0] + '/' + p[1] + '/' + p[2];
+  }
+  return val;
+}
+
+// 業者名行から「納地」「業者名」を分離
+// 例: "滝川駐屯地株式会社くみあい食品" → site="滝川駐屯地", vendor="株式会社くみあい食品"
+function splitVendorFull(full) {
+  var s = (full || '').replace(/^\s+|\s+$/g, '');
+  if (!s) {
+    return { site: '', vendor: '' };
+  }
+  var forms = ['株式会社', '有限会社', '合名会社', '合資会社', '合同会社'];
+  var i, form, idx;
+  for (i = 0; i < forms.length; i++) {
+    form = forms[i];
+    idx = s.indexOf(form);
+    if (idx > 0) {
+      return {
+        site: s.substring(0, idx),
+        vendor: s.substring(idx)
+      };
+    }
+  }
+  return { site: '', vendor: s };
+}
+
+// 備考マーク操作
+function addNoteMark(row, mark) {
+  if (!row.note) row.note = '';
+  if (row.note.indexOf(mark) === -1) {
+    row.note += mark;
+  }
+}
+function removeNoteMark(row, mark) {
+  if (!row.note) return;
+  var chars = row.note.split('');
+  var filtered = [];
+  var i;
+  for (i = 0; i < chars.length; i++) {
+    if (chars[i] !== mark) {
+      filtered.push(chars[i]);
+    }
+  }
+  row.note = filtered.join('');
+}
+
+// 行ごとの「計算OK（<）」判定
+function applyCalcMark(row) {
+  var q = parseNumberForCalc(row.qty);
+  var p = parseNumberForCalc(row.price);
+  var a = parseNumberForCalc(row.amount);
+  if (!isNaN(q) && !isNaN(p) && !isNaN(a)) {
+    var expected = q * p;
+    if (Math.abs(a - expected) < 0.5) {
+      addNoteMark(row, '<');
+    } else {
+      removeNoteMark(row, '<');
+    }
+  } else {
+    removeNoteMark(row, '<');
+  }
+}
+
+// 備考セルをDOM側で更新
+function updateRowNoteCell(rowIndex) {
+  var cell = document.querySelector('td[data-note-index="' + rowIndex + '"]');
+  if (cell && currentRows[rowIndex]) {
+    cell.textContent = currentRows[rowIndex].note || '';
+  }
+}
+
+// 金額セルをDOM側で更新
+function updateRowAmountCell(rowIndex) {
+  var cell = document.querySelector('td[data-amount-index="' + rowIndex + '"]');
+  if (cell && currentRows[rowIndex]) {
+    cell.textContent = currentRows[rowIndex].amount || '';
+  }
+}
+
+// -------------------- 明細TSV 再構築 --------------------
+
+function rebuildDetailsText() {
+  if (!currentRows || !currentRows.length) {
+    lastDetailsText = '';
+    return;
+  }
+  var linesOut = [];
+  linesOut.push('No\t品名\t規格\t単位\t合計数量\t契約単価\t金額\t備考');
+  var r, rr, lineOut;
+  for (r = 0; r < currentRows.length; r++) {
+    rr = currentRows[r];
+    lineOut = [
+      rr.no   || '',
+      rr.name || '',
+      rr.spec || '',
+      rr.unit || '',
+      rr.qty  || '',
+      rr.price || '',
+      rr.amount || '',
+      rr.note || ''
+    ].join('\t');
+    linesOut.push(lineOut);
+  }
+  lastDetailsText = linesOut.join('\n');
+}
+
+// -------------------- サマリ表示＆再計算 --------------------
+
+// サマリ表示の共通処理
+function displaySummary(summary) {
+  var sumBox = document.getElementById('sumBox');
+  if (!summary || !(summary.base || summary.tax || summary.total || summary.calcBaseStr)) {
+    sumBox.textContent = '';
+    lastSummaryText = '';
+    return;
+  }
+
+  var sText = '';
+
+  // ① 金額の合計行
+  if (summary.calcBaseStr) {
+    sText += '金額の合計:' + summary.calcBaseStr;
+    if (summary.baseCheckMark) {
+      sText += summary.baseCheckMark; // 一致していれば "<"
+    }
+    sText += '\n';
+  }
+
+  // ② [最終ページ集計] ブロック
+  sText += '[最終ページ集計]\n';
+  if (summary.base) {
+    sText += '課税対象額: ' + summary.base + '\n';
+  }
+  if (summary.tax) {
+    sText += '消費税: ' + summary.tax + '\n';
+  }
+  if (summary.total) {
+    sText += '合計: ' + summary.total + '\n';
+  }
+
+  sumBox.textContent = sText;
+  lastSummaryText = sText;
+}
+
+// 金額合計から課税対象額・消費税・合計を再計算（再計算版）
+function recalcTotalsFromRows() {
+  if (!currentRows || !currentRows.length) {
+    displaySummary({ base: '', tax: '', total: '', calcBaseStr: '' });
+    return;
+  }
+  var sum = 0;
+  var i, a;
+  for (i = 0; i < currentRows.length; i++) {
+    a = parseNumberForCalc(currentRows[i].amount);
+    if (!isNaN(a)) {
+      sum += a;
+    }
+  }
+  var baseNum = sum;
+  var taxNum  = Math.floor(baseNum * TAX_RATE + 1e-6);
+  var totalNum = baseNum + taxNum;
+
+  var summaryNew = {
+    base:  formatAmount(baseNum),
+    tax:   formatInt(taxNum),
+    total: formatInt(totalNum),
+    calcBaseStr: formatAmount(baseNum),
+    baseCheckMark: '' // 再計算時は "<" 判定は行わない（原本比較ではないため）
+  };
+  displaySummary(summaryNew);
+}
+
+// 1行の数量・単価変更に伴う金額＆サマリ再計算
+function recalcRowAndTotals(rowIndex) {
+  var row = currentRows[rowIndex];
+  if (!row) return;
+
+  var q = parseNumberForCalc(row.qty);
+  var p = parseNumberForCalc(row.price);
+
+  if (!isNaN(q) && !isNaN(p)) {
+    var newAmountVal = q * p;
+    row.amount = formatAmount(newAmountVal);
+    updateRowAmountCell(rowIndex);
+
+    addNoteMark(row, '@'); // 数量 or 単価を変更した行
+    applyCalcMark(row);    // "<" マークの再判定
+  } else {
+    removeNoteMark(row, '<');
+  }
+  updateRowNoteCell(rowIndex);
+  rebuildDetailsText();
+  recalcTotalsFromRows();
+}
+
+// -------------------- ヘッダー＋宛先用テキストの組み立て --------------------
+
+function buildAllDataText() {
+  var combined = VERSION_TEXT + '\n\n';
+
+  // 日付
+  var billDate = document.getElementById('billDate');
+  var billDateVal = billDate ? (billDate.value || '') : '';
+  if (billDateVal) {
+    combined += '日付: ' + formatDateForCopy(billDateVal) + '\n\n';
+  } else {
+    combined += '日付:\n\n';
+  }
+
+  // 宛先・業者名
+  var toText    = document.getElementById('toText');
+  var vendorText = document.getElementById('vendorText');
+  var toVal     = toText ? (toText.value || '') : '';
+  var vendorVal = vendorText ? (vendorText.value || '') : '';
+
+  combined += '宛先:\n' + (toVal ? toVal + '\n\n' : '\n\n');
+  combined += '業者名:\n' + (vendorVal ? vendorVal + '\n\n' : '\n\n');
+
+  // 納地・業者名ヘッダー
+  if (lastHeaderText) {
+    combined += lastHeaderText + '\n\n';
+  }
+
+  // 明細
+  if (lastDetailsText) {
+    combined += lastDetailsText + '\n\n';
+  }
+
+  // 最終ページ集計
+  if (lastSummaryText) {
+    combined += lastSummaryText + '\n';
+  }
+
+  return combined;
+}
+
+// -------------------- 描画 --------------------
+
+function renderTable(rows, summary) {
+  var resultDiv   = document.getElementById('result');
+  var summaryDiv  = document.getElementById('summary');
+  var headerBox   = document.getElementById('headerBox');
+  var copyMsgSpan = document.getElementById('copyMsg');
+  var vendorTA    = document.getElementById('vendorText');
+
+  resultDiv.innerHTML   = '';
+  summaryDiv.innerHTML  = '';
+  headerBox.innerHTML   = 'ここに納地・業者名ヘッダーが表示されます。';
+  document.getElementById('sumBox').innerHTML = '';
+  copyMsgSpan.innerHTML = '';
+
+  lastHeaderText  = '';
+  lastDetailsText = '';
+  lastSummaryText = '';
+  currentRows     = [];
+  originalSummary = summary || { base:'',tax:'',total:'',calcBaseStr:'',baseCheckMark:'' };
+
+  if (!rows || !rows.length) {
+    summaryDiv.innerHTML = '抽出された明細はありません。';
+    return;
+  }
+
+  currentRows = rows; // グローバルに保持
+
+  // ★ここから差し替え★
+  // 行ごとの「金額 = 合計数量 × 契約単価」反映 ＋ "<"（計算OK）判定を初期付与
+  var idx;
+  for (idx = 0; idx < currentRows.length; idx++) {
+    // 金額欄を「数量 × 単価」に統一
+    var qInit = parseNumberForCalc(currentRows[idx].qty);
+    var pInit = parseNumberForCalc(currentRows[idx].price);
+    if (!isNaN(qInit) && !isNaN(pInit)) {
+      currentRows[idx].amount = formatAmount(qInit * pInit);
+    }
+    // 計算OKなら備考に "<" を付与
+    applyCalcMark(currentRows[idx]);
+  }
+  // ★ここまで差し替え★
+
+  // 業者名一覧
+  var vendorMap = {};
+  var v;
+  for (idx = 0; idx < rows.length; idx++) {
+    v = rows[idx].vendor || '';
+    if (v) {
+      vendorMap[v] = true;
+    }
+  }
+  var vendorList = [];
+  for (var key in vendorMap) {
+    if (vendorMap.hasOwnProperty(key)) {
+      vendorList.push(key);
+    }
+  }
+
+  if (vendorList.length === 0) {
+    headerBox.textContent = '納地: （不明）\n業者名: （検出なし）';
+    lastHeaderText = '納地: （不明）\n業者名: （検出なし）';
+  } else if (vendorList.length === 1) {
+    var fullVendor = vendorList[0];
+    var sv = splitVendorFull(fullVendor);
+    var hLines = [];
+    if (sv.site) {
+      hLines.push('納地: ' + sv.site);
+    }
+    hLines.push('業者名: ' + (sv.vendor || fullVendor));
+    var headerText = hLines.join('\n');
+    headerBox.textContent = headerText;
+    lastHeaderText = headerText;
+
+    // 業者名テキストボックスの1行目に業者名をセット（2行目以降は保持）
+    if (vendorTA) {
+      var cur = vendorTA.value || '';
+      var lines = cur ? cur.split('\n') : ['','','','',''];
+      if (lines.length < 5) {
+        while (lines.length < 5) lines.push('');
+      }
+      lines[0] = (sv.vendor || fullVendor);
+      vendorTA.value = lines.join('\n');
+    }
+  } else {
+    var headerTextMulti = '業者名（' + vendorList.length + '件）:\n' + vendorList.join('\n');
+    headerBox.textContent = headerTextMulti;
+    lastHeaderText = headerTextMulti;
+    // vendorText は自動設定しない
+  }
+
+  // 明細テーブル描画（品名・単位・数量・単価は編集可、金額は自動、備考付き）
+  var table = document.createElement('table');
+  var thead = document.createElement('thead');
+  var trh   = document.createElement('tr');
+  var headers = ['No', '品名', '規格', '単位', '合計数量', '契約単価', '金額', '備考'];
+
+  for (idx = 0; idx < headers.length; idx++) {
+    var th = document.createElement('th');
+    th.appendChild(document.createTextNode(headers[idx]));
+    trh.appendChild(th);
+  }
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  var r, row, tr;
+
+  for (r = 0; r < rows.length; r++) {
+    row = rows[r];
+    tr  = document.createElement('tr');
+
+    // No（固定表示）
+    var tdNo = document.createElement('td');
+    tdNo.appendChild(document.createTextNode(row.no || ''));
+    tr.appendChild(tdNo);
+
+    // 品名（編集可）
+    var tdName = document.createElement('td');
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'name-input';
+    nameInput.value = row.name || '';
+    nameInput.setAttribute('data-row-index', String(r));
+    nameInput.oninput = function() {
+      var idxStr = this.getAttribute('data-row-index');
+      var idxNum = parseInt(idxStr, 10);
+      if (!isNaN(idxNum) && currentRows[idxNum]) {
+        currentRows[idxNum].name = this.value;
+        addNoteMark(currentRows[idxNum], '*'); // 品名修正
+        updateRowNoteCell(idxNum);
+        rebuildDetailsText();
+      }
+    };
+    tdName.appendChild(nameInput);
+    tr.appendChild(tdName);
+
+    // 規格（編集可）
+    var tdSpec = document.createElement('td');
+    var specInput = document.createElement('input');
+    specInput.type = 'text';
+    specInput.className = 'spec-input';
+    specInput.value = row.spec || '';
+    specInput.setAttribute('data-row-index', String(r));
+    specInput.oninput = function() {
+      var idxStr = this.getAttribute('data-row-index');
+      var idxNum = parseInt(idxStr, 10);
+      if (!isNaN(idxNum) && currentRows[idxNum]) {
+        currentRows[idxNum].spec = this.value;
+        rebuildDetailsText();
+      }
+    };
+    tdSpec.appendChild(specInput);
+    tr.appendChild(tdSpec);
+
+    // 単位（編集可）
+    var tdUnit = document.createElement('td');
+    var unitInput = document.createElement('input');
+    unitInput.type = 'text';
+    unitInput.className = 'unit-input';
+    unitInput.value = row.unit || '';
+    unitInput.setAttribute('data-row-index', String(r));
+    unitInput.oninput = function() {
+      var idxStr = this.getAttribute('data-row-index');
+      var idxNum = parseInt(idxStr, 10);
+      if (!isNaN(idxNum) && currentRows[idxNum]) {
+        currentRows[idxNum].unit = this.value;
+        addNoteMark(currentRows[idxNum], '*'); // 単位修正
+        updateRowNoteCell(idxNum);
+        rebuildDetailsText();
+      }
+    };
+    tdUnit.appendChild(unitInput);
+    tr.appendChild(tdUnit);
+
+    // 合計数量（編集可）
+    var tdQty = document.createElement('td');
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'text';
+    qtyInput.className = 'qty-input';
+    qtyInput.value = row.qty || '';
+    qtyInput.setAttribute('data-row-index', String(r));
+    qtyInput.oninput = function() {
+      var idxStr = this.getAttribute('data-row-index');
+      var idxNum = parseInt(idxStr, 10);
+      if (!isNaN(idxNum) && currentRows[idxNum]) {
+        currentRows[idxNum].qty = this.value;
+        recalcRowAndTotals(idxNum); // 数量変更 → 金額＆集計再計算
+      }
+    };
+    tdQty.appendChild(qtyInput);
+    tr.appendChild(tdQty);
+
+    // 契約単価（編集可）
+    var tdPrice = document.createElement('td');
+    var priceInput = document.createElement('input');
+    priceInput.type = 'text';
+    priceInput.className = 'price-input';
+    priceInput.value = row.price || '';
+    priceInput.setAttribute('data-row-index', String(r));
+    priceInput.oninput = function() {
+      var idxStr = this.getAttribute('data-row-index');
+      var idxNum = parseInt(idxStr, 10);
+      if (!isNaN(idxNum) && currentRows[idxNum]) {
+        currentRows[idxNum].price = this.value;
+        recalcRowAndTotals(idxNum); // 単価変更 → 金額＆集計再計算
+      }
+    };
+    tdPrice.appendChild(priceInput);
+    tr.appendChild(tdPrice);
+
+    // 金額（自動計算表示のみ）
+    var tdAmount = document.createElement('td');
+    tdAmount.style.textAlign = 'right';
+    tdAmount.setAttribute('data-amount-index', String(r));
+    tdAmount.appendChild(document.createTextNode(row.amount || ''));
+    tr.appendChild(tdAmount);
+
+    // 備考
+    var tdNote = document.createElement('td');
+    tdNote.setAttribute('data-note-index', String(r));
+    tdNote.appendChild(document.createTextNode(row.note || ''));
+    tr.appendChild(tdNote);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  resultDiv.appendChild(table);
+
+  summaryDiv.innerHTML = '抽出明細件数: ' + rows.length + ' 件';
+
+  // サマリ（初期表示は原本値＋金額合計）
+  displaySummary(originalSummary);
+
+  // 明細TSV再構築（備考列込み）
+  rebuildDetailsText();
+}
+
+// -------------------- コピー --------------------
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-1000px';
+  ta.style.top  = '-1000px';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+  } catch (e) {
+    // 旧ブラウザ用フォールバック
+  }
+  document.body.removeChild(ta);
+}
+
+function copyTextToClipboard(text, label) {
+  var msgSpan = document.getElementById('copyMsg');
+  if (!text) {
+    msgSpan.innerHTML = label + '用のデータがありません。';
+    return;
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () {
+      msgSpan.innerHTML = label + 'をコピーしました。';
+    }, function () {
+      fallbackCopy(text);
+      msgSpan.innerHTML = label + 'をコピーしました。（旧方式）';
+    });
+  } else {
+    fallbackCopy(text);
+    msgSpan.innerHTML = label + 'をコピーしました。';
+  }
+}
+
+// -------------------- 自動解析イベント --------------------
+
+(function() {
+  var ta           = document.getElementById('src');
+  var btnClear     = document.getElementById('btnClear');
+  var btnCopyAll   = document.getElementById('btnCopyAll');
+
+  // ★これを追加★
+  var btnPrintText = document.getElementById('btnPrintText');
+  // ★ここまで追加★
+
+  var btnPrint     = document.getElementById('btnPrint');
+  var bulkSpecText = document.getElementById('bulkSpecText');
+  var btnBulkSpec  = document.getElementById('btnBulkSpec');
+
+  // ★これを追加★
+  var btnGyousya   = document.getElementById('btnGyousya');
+  // ★ここまで追加★
+
+  var toText       = document.getElementById('toText');
+  var vendorText   = document.getElementById('vendorText');
+  var billDate     = document.getElementById('billDate');
+
+  function doParse() {
+    var text = ta.value || '';
+    // ledger_paste_parser.js のパーサを利用
+    var parsed = parseLedgerText(text);
+    var rows    = parsed && parsed.rows ? parsed.rows : [];
+    var summary = parsed && parsed.summary ? parsed.summary : { base:'',tax:'',total:'',calcBaseStr:'',baseCheckMark:'' };
+    renderTable(rows, summary);
+  }
+
+  // 貼り付け時に自動解析
+  if (ta.addEventListener) {
+    ta.addEventListener('paste', function() {
+      setTimeout(doParse, 0);
+    }, false);
+    ta.addEventListener('input', function() {
+      doParse();
+    }, false);
+  } else {
+    ta.onpaste = function() {
+      setTimeout(doParse, 0);
+    };
+    ta.onkeyup = function() {
+      doParse();
+    };
+  }
+
+  btnClear.onclick = function() {
+  ta.value = '';
+  document.getElementById('result').innerHTML   = '';
+  document.getElementById('summary').innerHTML  = '';
+  document.getElementById('headerBox').innerHTML = 'ここに納地・業者名ヘッダーが表示されます。';
+  document.getElementById('sumBox').innerHTML   = '';
+  document.getElementById('copyMsg').innerHTML  = '';
+  bulkSpecText.value = '';
+
+  // ★ここでは日付・宛先・業者名はクリアしない
+  // dateInput.value = '';
+  // atenaText.value = '';
+  // vendorText.value = '';
+
+  lastHeaderText  = '';
+  lastDetailsText = '';
+  lastSummaryText = '';
+  currentRows     = [];
+  originalSummary = null;
+  lastAllDataText = '';
+};
+
+
+  // 規格欄 一括入力
+  btnBulkSpec.onclick = function() {
+    var v = bulkSpecText.value || '';
+    if (!currentRows || !currentRows.length) {
+      document.getElementById('copyMsg').innerHTML = '明細がないため規格一括入力は行われません。';
+      return;
+    }
+    var i;
+    for (i = 0; i < currentRows.length; i++) {
+      currentRows[i].spec = v;
+    }
+    var inputs = document.getElementsByClassName('spec-input');
+    for (i = 0; i < inputs.length; i++) {
+      inputs[i].value = v;
+    }
+    rebuildDetailsText();
+    document.getElementById('copyMsg').innerHTML = '規格欄を一括入力しました。';
+  };
+
+  // 全データコピー（バージョン＋日付＋宛先＋業者名＋ヘッダー＋明細＋最終ページ集計）
+  btnCopyAll.onclick = function() {
+    var combined = buildAllDataText();
+    copyTextToClipboard(combined, '全データ');
+  };
+
+  // ★これを追加★
+  // テキスト印刷：全データコピーと同じ内容をプレーンテキストで印刷プレビュー
+  btnPrintText.onclick = function() {
+    var combined = buildAllDataText();
+    if (!combined) {
+      alert('印刷するデータがありません。');
+      return;
+    }
+
+    // 新しいウィンドウでテキストを表示して印刷
+    var w = window.open('', '_blank');
+    if (!w) {
+      alert('ポップアップがブロックされました。ブラウザの設定を確認してください。');
+      return;
+    }
+
+    // テキストをHTMLとして安全に出すためにエスケープ
+    var escaped = combined
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    w.document.open();
+    w.document.write(
+      '<!doctype html>' +
+      '<html lang="ja">' +
+      '<head>' +
+      '<meta charset="UTF-8">' +
+      '<title>テキスト印刷</title>' +
+      '</head>' +
+      '<body>' +
+      '<pre style="font-family: monospace; font-size: 12px; white-space: pre-wrap; margin: 20px;">' +
+      escaped +
+      '</pre>' +
+      '<script>window.onload=function(){window.print();};<\/script>' +
+      '</body>' +
+      '</html>'
+    );
+    w.document.close();
+  };
+  // ★ここまで追加★
+
+
+
+  // 印刷（print.js 側の printLedgerData を利用）
+  btnPrint.onclick = function() {
+    var combined = buildAllDataText();
+    if (window.printLedgerData) {
+      window.printLedgerData(combined);
+    } else {
+      alert('print.js が読み込まれていません。');
+    }
+  };
+
+
+ // ★ここから追加：業者名等反映ボタン★
+  if (btnGyousya) {
+    btnGyousya.onclick = function () {
+  var headerBox = document.getElementById('headerBox');
+  var headerText = headerBox ? (headerBox.textContent || '') : '';
+
+  if (!headerText) {
+    alert('ヘッダー情報がありません。先に納入台帳テキストを貼り付けて解析してください。');
+    return;
+  }
+
+  if (window.applyGyousyaFromHeader) {
+    window.applyGyousyaFromHeader(headerText, 'toText', 'vendorText');
+  } else {
+    alert('gyousya.js が読み込まれていません。');
+  }
+};
+  }
+  // ★ここまで追加★
+
+
+
+})();
+</script>
+</body>
+</html>
