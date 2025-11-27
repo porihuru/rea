@@ -1,6 +1,6 @@
 // print.js
 // 納入台帳テキスト解析ツール用 印刷プレビュー
-// v2025.11.24-01
+// v2025.11.24-02
 //
 // ・index.html 側の「全データコピー用文字列」を引数として受け取るが、
 //   日付・宛先・業者名は必ず画面のテキストボックスから取得する。
@@ -185,7 +185,7 @@
     var invoiceLine = "";
     if (totalStr) {
       // 「請求額￥1,497,681ー」の形式
-      invoiceLine = "請求額￥" + totalStr + "ー";
+      invoiceLine = "￥" + totalStr + "ー";
     }
 
     var versionText = window.VERSION_TEXT || "";
@@ -201,10 +201,12 @@
     html += ".page:last-child { page-break-after: auto; }";
     html += ".page-inner { width: 100%; box-sizing: border-box; }";
 
-    html += ".invoice-header { position: relative; margin-bottom: 8px; }";
-    html += ".invoice-title { font-size: 20px; font-weight: bold; text-align: center; }";
-    html += ".page-no { position: absolute; right: 0; top: 0; font-size: 11px; }";
-    html += ".date-line { text-align: right; margin: 4px 0 6px; }";
+    // ★ヘッダー＆請求額レイアウト調整★
+    html += ".invoice-header { position: relative; margin-bottom: 8px; padding: 6px 8px; background: #24527a; color: #fff; }";
+    html += ".invoice-title { font-size: 20px; font-weight: bold; text-align: center; letter-spacing: 4px; }";
+    html += ".page-no { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 11px; }";
+    html += ".date-line { text-align: right; margin: 4px 0 4px; }";
+    html += ".claim-line { margin: 2px 0 4px; font-size: 12px; }";
 
     html += ".box { border: 1px solid #000; padding: 6px 8px; margin-bottom: 4px; }";
     html += ".box-label { font-size: 11px; margin-bottom: 2px; }";
@@ -212,7 +214,11 @@
     html += ".box.atena .box-body { text-align: left; }";
     html += ".box.vendor .box-body { text-align: right; }";
 
-    html += ".invoice-amount-line { text-align: right; font-size: 16px; font-weight: bold; margin: 6px 0 6px; }";
+    html += ".invoice-amount-wrapper { margin: 6px 0 6px; text-align: right; }";
+    html += ".invoice-amount-box { display: inline-block; border: 1px solid #24527a; padding: 4px 10px; min-width: 70mm; }";
+    html += ".invoice-amount-label { font-size: 12px; margin-bottom: 2px; text-align: left; }";
+    html += ".invoice-amount-value { font-size: 16px; font-weight: bold; text-align: right; }";
+    // ★ここまで ヘッダー＆請求額レイアウト調整★
 
     html += ".invoice-table { width: 100%; border-collapse: collapse; margin-top: 4px; }";
     html += ".invoice-table th, .invoice-table td { border: 1px solid #000; padding: 2px 4px; vertical-align: top; }";
@@ -245,9 +251,9 @@
 
       html += '<div class="page"><div class="page-inner">';
 
-      // ヘッダー
+      // ヘッダー（色付きバー）
       html += '<div class="invoice-header">';
-      html += '<div class="invoice-title">請求書</div>';
+      html += '<div class="invoice-title">請　求　書</div>';
       html +=
         '<div class="page-no">' +
         (p + 1) +
@@ -263,6 +269,9 @@
           escapeHtml(data.dateText) +
           "</div>";
       }
+
+      // 「下記の通りご請求申し上げます。」行
+      html += '<div class="claim-line">下記の通りご請求申し上げます。</div>';
 
       // 宛先枠
       html += '<div class="box atena">';
@@ -280,12 +289,16 @@
         "</div>";
       html += "</div>";
 
-      // 請求額
+      // 請求額（ボックス表示）
       if (invoiceLine) {
+        html += '<div class="invoice-amount-wrapper">';
+        html += '<div class="invoice-amount-box">';
+        html += '<div class="invoice-amount-label">請求額</div>';
         html +=
-          '<div class="invoice-amount-line">' +
+          '<div class="invoice-amount-value">' +
           escapeHtml(invoiceLine) +
           "</div>";
+        html += "</div></div>";
       }
 
       // 明細表
