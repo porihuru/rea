@@ -1,6 +1,6 @@
 // ledger_paste_parser.js
 // 貼り付けテキスト → 明細 rows ＋ 最終ページ集計 summary への変換専用
-// v2025.11.24-01
+// v2025.11.24-02
 //
 // ●責務
 //   - 納入台帳の「貼り付けテキスト」から
@@ -19,17 +19,21 @@
 //     ・数量・単価は「数量×単価 ≒ 金額」で最も近いペアを探索して決定する。
 //       （数量・単価の値自体は原本の値をそのまま採用）
 //
-// ●品名＆単位抽出方針
-//   1) コード行（000x を含む行）の「コード以降」を tail として見る
-//      - tail から (PC|BG|KG|EA|CA|CN|SH) を探し、あればそれを単位とする
-//      - 単位の手前まで全部を品名とする（先頭が数字でもOK：1L〜 等）
-//   2) tail に単位が無い場合は、その tail 全体を品名候補として保持
-//   3) 2行目以降
-//      - 単位がまだ決まっていない＆行内に単位があれば
-//        ・単位の手前の文字列を品名に追加
-//        ・単位を確定
-//      - 単位が既に決まっていて、その行が数字を含まないなら品名の続きとして追加
-//      - それ以外（数字を含むが単位が無いなど）は品名領域の終わりとみなす
+// ●品名＆単位抽出方針（2025.11.24-02）
+//   1) コード行（000x を含む行）から次の「単位行」までの間を全部つないで品名とする
+//      - 単位行とは、trim後が PC/BG/KG/EA/CA/CN/SH のいずれかだけになっている行
+//      - 例:
+//          0003
+//          苺タルト
+//          EA
+//        → 品名 = "苺タルト", 単位 = "EA"
+//          0004
+//          おつまみスティッ
+//          ク
+//          EA
+//        → 品名 = "おつまみスティック", 単位 = "EA"
+//      - 数字から始まる品名（1L〜 等）も、コード行〜単位行の間にあればそのまま品名になる
+//   2) もしコード行の中にすでに「品名＋単位」が同居していれば、従来通りその行から抽出
 //
 // ●数量・単価・金額抽出方針
 //   - ブロック内の数値からコードを除いたものだけを対象にして：
@@ -146,6 +150,7 @@ function parseDetailsFromText(text) {
         if (!vn) continue;
         var vnTrim = vn.replace(/^\s+|\s+$/g, '');
         if (vnTrim) {
+          // ★ここは「納地＋業者名」の合体文字をそのまま保持★
           currentVendor = vnTrim;
           break;
         }
@@ -185,10 +190,7 @@ function parseDetailsFromText(text) {
         break;
       }
 
-      // ページヘッダー行（旧版・新版どちらもここで切る）
-      // 例：
-      //   "納　地： 業 者 名："（新版）
-      //   "納入台帳  No" など
+      // ページヘッダー行
       if (t2.indexOf('納　地') !== -1 && t2.indexOf('業 者 名') !== -1) {
         blockEnd = k;
         break;
@@ -381,7 +383,7 @@ function parseDetailsFromText(text) {
     var nameParts = [];
     var unitFromName = '';
 
-    // 1行目（コード行）から：コード以降を tail として処理
+    // ★1) まずコード行の tail に「品名＋単位」が同居していないか見る（従来ロジック）★
     var tail = line.substring(m.index + 4); // 4桁コードの直後から
     var tailTrim = tail.replace(/^\s+|\s+$/g, '');
     if (tailTrim) {
@@ -401,50 +403,39 @@ function parseDetailsFromText(text) {
       }
     }
 
-    // 2行目以降：品名・単位の続き
-    for (p = i + 1; p < blockEnd; p++) {
-      var l3 = lines[p];
-      if (!l3) continue;
-      var t3 = l3.replace(/^\s+|\s+$/g, '');
-      if (!t3) continue;
+    // ★2) コード行側で単位が見つからなかった場合：
+    //     「コード行の次の行」から「最初に単位行が出てくるところ」までを品名として全部つなぐ★
+    if (!unitFromName) {
+      for (p = i + 1; p < blockEnd; p++) {
+        var l3 = lines[p];
+        if (!l3) continue;
+        var t3 = l3.replace(/^\s+|\s+$/g, '');
+        if (!t3) continue;
 
-      var um2 = unitRe.exec(t3);
-      var tokens3 = findNumberTokens(l3);
-
-      if (!tokens3.length && !um2) {
-        // 数字も単位も無い → 完全に品名の続きとみなす
-        nameParts.push(t3);
-        continue;
-      }
-
-      if (um2) {
-        // この行で単位が出てきた
-        var unitIdx2 = um2.index;
-        var prefixUnit = t3.substring(0, unitIdx2);
-        prefixUnit = prefixUnit.replace(/\s+$/g, '');
-        if (prefixUnit) {
-          // 例: "（黄） PC 11.00" → "（黄）" を品名に追加
-          nameParts.push(prefixUnit);
+        // 行全体が単位だけなら「単位行」とみなす
+        var mUnitOnly = t3.match(/^(PC|BG|KG|EA|CA|CN|SH)$/);
+        if (mUnitOnly) {
+          unitFromName = mUnitOnly[1];
+          break; // 単位が確定したので品名抽出はここまで
         }
-        if (!unitFromName) {
+
+        // 単位文字列が行の中に紛れているパターン（例: "（黄） PC"）にも一応対応
+        var um2 = unitRe.exec(t3);
+        if (um2) {
+          var unitIdx2 = um2.index;
+          var prefixUnit = t3.substring(0, unitIdx2);
+          prefixUnit = prefixUnit.replace(/\s+$/g, '');
+          if (prefixUnit) {
+            nameParts.push(prefixUnit);
+          }
           unitFromName = um2[1];
+          break;
         }
-        // 単位以降は数量などなので、ここで品名処理は終了
-        break;
-      }
 
-      // 単位は無いが数字がある行
-      // → 行頭の文字列だけを品名の続きにするか判断
-      var firstIdx3 = tokens3[0].index;
-      if (firstIdx3 > 0) {
-        var prefix3 = l3.substring(0, firstIdx3);
-        prefix3 = prefix3.replace(/^\s+|\s+$/g, '');
-        if (prefix3) {
-          nameParts.push(prefix3);
-        }
+        // ここまで来たら、この行は「品名の続き」とみなしてまるごと追加
+        // → 数字で始まる品名（半角/全角どちらも）もそのまま品名扱いになる
+        nameParts.push(t3);
       }
-      // 数字が現れた段階で、それ以降は品名ではないとみなして終了
-      break;
     }
 
     var fullName = nameParts.join('');
@@ -455,6 +446,7 @@ function parseDetailsFromText(text) {
       name = fullName;
       unit = unitFromName;
     } else {
+      // どうしても単位が取れなかった場合は、末尾くっつき判定でフォロー
       var nu = splitNameAndUnit(fullName);
       name = nu.name;
       unit = nu.unit;
