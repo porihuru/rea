@@ -1,6 +1,6 @@
 // ledger_paste_parser.js
 // 貼り付けテキスト → 明細 rows ＋ 最終ページ集計 summary への変換専用
-// v2025.11.24-02（少量数量品目の数量・単価・金額ロジックを強化）
+// v2025.11.24-03（少量数量品目の数量・単価・金額ロジックを再修正）
 //
 // ●責務
 //   - 納入台帳の「貼り付けテキスト」から
@@ -51,6 +51,7 @@
 //     ・ブロック末尾側から見て、最後の「数値が2個以上並んでいる行」を
 //       「合計数量・契約単価」行とみなし
 //     ・その直後の行の数値を「金額」として採用する
+//       （そのさらに後ろに単独の数値行があっても無視）
 //   - それ以外（少量数量が無い品目）は、従来ロジック（最大値＝金額＋組合せ探索）のまま
 
 // -------------------- ユーティリティ --------------------
@@ -127,10 +128,9 @@ function splitNameAndUnit(fullName) {
 // 合計数量・契約単価・金額を取得する
 function detectQtyPriceAmountByLastPair(lines, startIdx, endIdx, code) {
   var pairLineIndex = -1;
-  var amountLineIndex = -1;
   var i;
 
-  // 金額行候補：ブロック末尾側から「数字を含む行」を探す（コード行は除外）
+  // 1) ブロック末尾側から「数値が2個以上ある行」（コード行以外）を探す
   for (i = endIdx - 1; i >= startIdx; i--) {
     var ln = lines[i];
     if (!ln) continue;
@@ -139,26 +139,7 @@ function detectQtyPriceAmountByLastPair(lines, startIdx, endIdx, code) {
     if (trimLn === code) continue;
 
     var nums = findNumberTokens(ln);
-    if (nums.length > 0) {
-      amountLineIndex = i;
-      break;
-    }
-  }
-  if (amountLineIndex === -1) {
-    return null;
-  }
-
-  // 数量・単価行候補：金額行の1つ上から上方向に、「数値が2個以上ある行」のうち
-  // 一番下（＝金額行に最も近い）ものを探す
-  for (i = amountLineIndex - 1; i >= startIdx; i--) {
-    var ln2 = lines[i];
-    if (!ln2) continue;
-    var trimLn2 = ln2.replace(/^\s+|\s+$/g, '');
-    if (!trimLn2) continue;
-    if (trimLn2 === code) continue;
-
-    var nums2 = findNumberTokens(ln2);
-    if (nums2.length >= 2) {
+    if (nums.length >= 2) {
       pairLineIndex = i;
       break;
     }
@@ -167,21 +148,40 @@ function detectQtyPriceAmountByLastPair(lines, startIdx, endIdx, code) {
     return null;
   }
 
-  var pairTokens = findNumberTokens(lines[pairLineIndex]);
+  // 2) その直後（下）の行から、最初に出てくる「数値を含む行」を金額行とみなす
+  var amountLineIndex = -1;
+  for (var j = pairLineIndex + 1; j < endIdx; j++) {
+    var ln2 = lines[j];
+    if (!ln2) continue;
+    var trimLn2 = ln2.replace(/^\s+|\s+$/g, '');
+    if (!trimLn2) continue;
+    if (trimLn2 === code) continue;
+
+    var nums2 = findNumberTokens(ln2);
+    if (nums2.length >= 1) {
+      amountLineIndex = j;
+      break;
+    }
+  }
+  if (amountLineIndex === -1) {
+    return null;
+  }
+
+  var pairTokens   = findNumberTokens(lines[pairLineIndex]);
   var amountTokens = findNumberTokens(lines[amountLineIndex]);
   if (pairTokens.length < 2 || amountTokens.length < 1) {
     return null;
   }
 
   // 「最後の2つ」が [合計数量, 契約単価]
-  var qtyTok = pairTokens[pairTokens.length - 2];
-  var priceTok = pairTokens[pairTokens.length - 1];
+  var qtyTok    = pairTokens[pairTokens.length - 2];
+  var priceTok  = pairTokens[pairTokens.length - 1];
   // 金額行の最後の数値が金額
   var amountTok = amountTokens[amountTokens.length - 1];
 
   return {
-    qtyText: qtyTok.text,
-    priceText: priceTok.text,
+    qtyText:    qtyTok.text,
+    priceText:  priceTok.text,
     amountText: amountTok.text
   };
 }
@@ -207,7 +207,7 @@ function parseDetailsFromText(text) {
     var line = lines[i];
     var trimmed = line ? line.replace(/^\s+|\s+$/g, '') : '';
 
-    // 令和○年○月 → 次行が「納地＋業者名」の行（例：滝川駐屯地株式会社○○）
+    // 令和○年○月 → 次行が「納地＋業者名」の行
     if (trimmed.indexOf('令和') !== -1 &&
         trimmed.indexOf('年') !== -1 &&
         trimmed.indexOf('月') !== -1) {
@@ -217,7 +217,7 @@ function parseDetailsFromText(text) {
         if (!vn) continue;
         var vnTrim = vn.replace(/^\s+|\s+$/g, '');
         if (vnTrim) {
-          currentVendor = vnTrim;
+          currentVendor = vnTrim; // 納地＋業者名をそのまま保持
           break;
         }
       }
@@ -256,7 +256,7 @@ function parseDetailsFromText(text) {
         break;
       }
 
-      // ページヘッダー行（旧版・新版どちらもここで切る）
+      // ページヘッダー行
       if (t2.indexOf('納　地') !== -1 && t2.indexOf('業 者 名') !== -1) {
         blockEnd = k;
         break;
