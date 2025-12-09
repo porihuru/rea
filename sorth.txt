@@ -1,29 +1,22 @@
-vendor_db/
+text_access/
   index.html
-  vendors_db.csv
   css/
     style.css
   js/
     util.js
     state.js
-    io_load.js
-    io_save.js
+    sp_api.js
+    sp_db.js
     render.js
     sort.js
     search.js
     crud.js
     print.js
+    export_csv.js
     app.js
 
 
-
-カテゴリー,業者名,住所,電話番号,担当者,入力会計隊,備考
-食料,日本栄養食品㈱,北海道○○市○○,011-000-0000,山田,滝川,後払可
-雑貨,○○商店,北海道△△市△△,0166-000-0000,佐藤,旭川,"備考にカンマ,が入る例"
-
-
-
-<!-- 2025-12-09 JST -->
+<!-- 作成日時: 2025-12-09 13:00 JST | ファイル名: index.html -->
 <!doctype html>
 <html lang="ja">
 <head>
@@ -33,155 +26,216 @@ vendor_db/
   <title>後払可能業者一覧</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
   <div class="page">
     <h1>後払可能業者一覧</h1>
 
-    <!-- 上部：検索/ボタン/検索語固定表示 -->
+    <!-- 上部ツールバー（検索語固定表示は廃止） -->
     <div class="toolbar no-print">
       <input id="searchInput" class="search" type="text" placeholder="検索（全項目）">
       <button id="searchBtn" class="btn">検索</button>
-      <button id="clearSearchBtn" class="btn ghost">検索クリア</button>
+      <button id="clearSearchBtn" class="btn ghost">クリア</button>
+      <button id="reloadBtn" class="btn">再読込</button>
       <button id="printBtn" class="btn">印刷</button>
       <button id="exportBtn" class="btn">CSV書き出し（表示中のみ）</button>
+      <span id="searchInfo" class="info"></span>
 
-      <div class="search-fixed">
-        <div class="search-fixed-label">検索語（固定表示）</div>
-        <div id="searchFixedText" class="search-fixed-text">（検索なし）</div>
-        <div id="searchInfo" class="info"></div>
-      </div>
+      <div id="statusInfo" class="status"></div>
     </div>
 
-    <!-- CRUDフォーム -->
-    <div class="form no-print">
-      <div class="row">
-        <div class="field">
-          <div class="label">カテゴリー（プルダウン）</div>
-          <select id="f_category" class="select"></select>
-        </div>
-
-        <div class="field addcat">
-          <div class="label">新規カテゴリ追加</div>
-          <input id="f_newCategory" type="text" placeholder="例：燃料">
-          <button id="addCategoryBtn" class="btn smallbtn">追加</button>
-        </div>
-
-        <div class="field">
-          <div class="label">業者名</div>
-          <input id="f_vendor" type="text">
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="field wide">
-          <div class="label">住所</div>
-          <input id="f_address" type="text">
-        </a>
-      </div>
-
-      <div class="row">
-        <div class="field">
-          <div class="label">電話番号</div>
-          <input id="f_phone" type="text">
-        </div>
-        <div class="field">
-          <div class="label">担当者</div>
-          <input id="f_contact" type="text">
-        </div>
-        <div class="field">
-          <div class="label">入力会計隊</div>
-          <input id="f_accounting" type="text">
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="field wide">
-          <div class="label">備考</div>
-          <input id="f_notes" type="text">
-        </div>
-      </div>
-
-      <div class="row actions">
-        <button id="addBtn" class="btn">追加</button>
-        <button id="updateBtn" class="btn">修正</button>
-        <button id="deleteBtn" class="btn danger">削除</button>
-        <button id="clearBtn" class="btn ghost">選択解除</button>
-        <span id="selectInfo" class="info"></span>
-      </div>
-    </div>
-
-    <!-- テーブル -->
+    <!-- 一覧テーブル -->
     <div id="tableWrap" class="table-wrap"></div>
 
-    <!-- DB読込：オフラインWebサーバ(http)なら自動読込。file://は手動読込。 -->
-    <div class="db no-print">
-      <div class="db-title">DB（CSV）読込</div>
-      <div class="db-row">
-        <input id="dbFile" type="file" accept=".csv,text/csv,text/plain">
-        <button id="loadBtn" class="btn">読込</button>
-        <span id="dbInfo" class="info"></span>
-      </div>
-      <div class="hint">
-        ※ http://（オフラインWebサーバ）で開くと vendors_db.csv を自動読込します。<br>
-        ※ file:// 直開きの場合は自動読込できないので、上の「読込」を使ってください。
+    <!-- 管理パネル：普段は閉じる -->
+    <div class="admin-area no-print">
+      <div id="adminToggle" class="admin-toggle">▶ 管理（追加・修正・削除）</div>
+
+      <div id="adminPanel" class="form admin-panel hidden">
+        <div class="row">
+          <div class="field">
+            <div class="label">カテゴリー（プルダウン）</div>
+            <select id="f_category" class="select"></select>
+          </div>
+
+          <div class="field addcat">
+            <div class="label">新規カテゴリ追加（ローカル候補）</div>
+            <input id="f_newCategory" type="text" placeholder="例：燃料">
+            <button id="addCategoryBtn" class="btn smallbtn">追加</button>
+          </div>
+
+          <div class="field">
+            <div class="label">業者名</div>
+            <input id="f_vendor" type="text">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field wide">
+            <div class="label">住所</div>
+            <input id="f_address" type="text">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <div class="label">電話番号</div>
+            <input id="f_phone" type="text">
+          </div>
+          <div class="field">
+            <div class="label">担当者</div>
+            <input id="f_contact" type="text">
+          </div>
+          <div class="field">
+            <div class="label">入力会計隊</div>
+            <input id="f_accounting" type="text">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field wide">
+            <div class="label">備考</div>
+            <input id="f_notes" type="text">
+          </div>
+        </div>
+
+        <div class="row actions">
+          <button id="addBtn" class="btn">追加（SharePoint）</button>
+          <button id="updateBtn" class="btn">修正（SharePoint）</button>
+          <button id="deleteBtn" class="btn danger">削除（SharePoint）</button>
+          <button id="clearBtn" class="btn ghost">選択解除</button>
+          <span id="selectInfo" class="info"></span>
+        </div>
       </div>
     </div>
+
+    <!-- 画面最下部：接続先表示（必須） -->
+    <div id="footerInfo" class="footer"></div>
   </div>
 
-  <!-- JS（IE10相当想定：ES5、importなし） -->
   <script src="js/util.js"></script>
   <script src="js/state.js"></script>
-  <script src="js/io_load.js"></script>
-  <script src="js/io_save.js"></script>
+  <script src="js/sp_api.js"></script>
+  <script src="js/sp_db.js"></script>
   <script src="js/render.js"></script>
   <script src="js/sort.js"></script>
   <script src="js/search.js"></script>
   <script src="js/crud.js"></script>
   <script src="js/print.js"></script>
+  <script src="js/export_csv.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
 
 
-/* 2025-12-09 JST */
-body { margin: 0; font-family: "Meiryo","MS PGothic",sans-serif; background: #f5f5f5; }
-.page { max-width: 1250px; margin: 0 auto; padding: 14px; background: #fff; }
+
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: css/style.css */
+
+body {
+  margin: 0;
+  font-family: "Meiryo","MS PGothic",sans-serif;
+  background: #f5f5f5;
+}
+
+.page {
+  max-width: 1250px;
+  margin: 0 auto;
+  padding: 14px;
+  background: #fff;
+}
+
 h1 { margin: 6px 0 12px; font-size: 22px; }
 
-.toolbar { padding: 10px; border: 1px solid #ddd; background: #fafafa; }
+.toolbar {
+  padding: 10px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
 .search { width: 360px; padding: 8px; font-size: 14px; }
+
 .btn { padding: 8px 12px; margin-left: 6px; cursor: pointer; font-size: 14px; }
-.btn.danger { background: #ffe8e8; }
 .btn.ghost { background: #f2f2f2; }
+.btn.danger { background: #ffe8e8; }
+
 .smallbtn { padding: 6px 10px; font-size: 12px; margin-left: 6px; }
+
 .info { margin-left: 10px; color: #444; font-size: 12px; }
 
-.search-fixed { margin-top: 10px; padding: 8px; border: 1px solid #e2e2e2; background: #fff; }
-.search-fixed-label { font-size: 12px; color: #333; margin-bottom: 4px; }
-.search-fixed-text { font-size: 16px; font-weight: bold; color: #222; }
+.status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #0b5394;
+  min-height: 16px;
+}
 
-.form { margin-top: 10px; padding: 10px; border: 1px solid #ddd; }
+.table-wrap {
+  margin-top: 10px;
+  border: 1px solid #ddd;
+  overflow-x: auto;
+}
+
+table { border-collapse: collapse; width: 100%; }
+
+th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
+
+th {
+  background: #f0f6ff;
+  cursor: pointer;
+  user-select: none;
+}
+
+tr.selected td { background: #fff8d8; }
+
+.hl { color: #d00; font-weight: bold; }
+
+/* 管理パネル */
+.admin-area { margin-top: 10px; }
+
+.admin-toggle {
+  padding: 10px;
+  border: 1px solid #ddd;
+  background: #fcfcfc;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.form {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.hidden { display: none; }
+
 .row { display: block; margin: 8px 0; }
+
 .field { display: inline-block; vertical-align: top; margin-right: 10px; }
+
 .field.wide { width: 98%; }
+
 .label { font-size: 12px; color: #333; margin-bottom: 2px; }
+
 .field input { width: 260px; padding: 7px; }
+
 .field.wide input { width: 98%; }
+
 .select { width: 220px; padding: 7px; }
+
 .addcat input { width: 160px; }
 
 .actions { margin-top: 10px; }
-.table-wrap { margin-top: 10px; border: 1px solid #ddd; overflow-x: auto; }
 
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
-th { background: #f0f6ff; cursor: pointer; user-select: none; }
-tr.selected td { background: #fff8d8; }
-.hl { color: #d00; font-weight: bold; }
-
-.db { margin-top: 12px; padding: 10px; border: 1px dashed #bbb; background: #fcfcfc; }
-.db-title { font-weight: bold; margin-bottom: 6px; }
-.hint { margin-top: 6px; font-size: 12px; color: #666; }
+/* フッター：接続先表示 */
+.footer {
+  margin-top: 12px;
+  padding: 10px;
+  border-top: 1px solid #ddd;
+  font-size: 12px;
+  color: #333;
+  background: #fafafa;
+}
 
 @media print {
   .no-print { display: none !important; }
@@ -191,7 +245,7 @@ tr.selected td { background: #fff8d8; }
 }
 
 
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/util.js */
 (function (w) {
   function byId(id) { return document.getElementById(id); }
 
@@ -205,26 +259,17 @@ tr.selected td { background: #fff8d8; }
 
   function escapeHtml(s) {
     s = (s === null || s === undefined) ? "" : String(s);
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
 
   function highlightText(text, query) {
     text = (text === null || text === undefined) ? "" : String(text);
-    query = (query === null || query === undefined) ? "" : String(query);
-    query = trim(query);
+    query = trim((query === null || query === undefined) ? "" : String(query));
     if (!query) return escapeHtml(text);
 
-    var src = text;
-    var low = src.toLowerCase();
-    var q = query.toLowerCase();
-
-    var out = "";
-    var i = 0;
+    var src = text, low = src.toLowerCase(), q = query.toLowerCase();
+    var out = "", i = 0;
     while (true) {
       var p = low.indexOf(q, i);
       if (p === -1) break;
@@ -236,60 +281,18 @@ tr.selected td { background: #fff8d8; }
     return out;
   }
 
-  // CSV 1行パース（ダブルクォート対応）
-  function parseCsvLine(line) {
-    var out = [];
-    var cur = "";
-    var inQ = false;
-    var i = 0;
-    while (i < line.length) {
-      var ch = line.charAt(i);
-      if (inQ) {
-        if (ch === '"') {
-          // "" -> "
-          if (i + 1 < line.length && line.charAt(i + 1) === '"') {
-            cur += '"';
-            i += 2;
-            continue;
-          } else {
-            inQ = false;
-            i++;
-            continue;
-          }
-        } else {
-          cur += ch;
-          i++;
-          continue;
-        }
-      } else {
-        if (ch === '"') {
-          inQ = true;
-          i++;
-          continue;
-        }
-        if (ch === ',') {
-          out.push(cur);
-          cur = "";
-          i++;
-          continue;
-        }
-        cur += ch;
-        i++;
-      }
-    }
-    out.push(cur);
-    return out;
-  }
-
-  // CSV セル作成（必要時のみクォート）
   function csvCell(s) {
     s = (s === null || s === undefined) ? "" : String(s);
-    // 改行/カンマ/クォートがあればクォート
-    if (/[",\r\n]/.test(s)) {
-      s = s.replace(/"/g, '""');
-      return '"' + s + '"';
-    }
+    if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
     return s;
+  }
+
+  function z2(n) { n = parseInt(n, 10) || 0; return (n < 10 ? "0" : "") + n; }
+
+  function formatJST(dt) {
+    // ブラウザがJST想定。念のためローカル時刻で整形。
+    return dt.getFullYear() + "/" + z2(dt.getMonth() + 1) + "/" + z2(dt.getDate())
+      + " " + z2(dt.getHours()) + ":" + z2(dt.getMinutes());
   }
 
   w.U = {
@@ -298,22 +301,25 @@ tr.selected td { background: #fff8d8; }
     trim: trim,
     escapeHtml: escapeHtml,
     highlightText: highlightText,
-    parseCsvLine: parseCsvLine,
-    csvCell: csvCell
+    csvCell: csvCell,
+    formatJST: formatJST
   };
 })(window);
 
 
 
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/state.js */
 (function (w) {
   var State = {
-    rows: [],            // {id, category, vendor, address, phone, contact, accounting, notes}
+    rows: [],            // {id(SharePoint ItemId), category, vendor, address, phone, contact, accounting, notes}
     selectedId: null,
     sortKey: "vendor",
     sortDir: "asc",
     query: "",
-    lastLoadedName: ""
+    lastLoadedAt: null,
+    webUrl: "",
+    webTitle: "",
+    listViewUrl: ""
   };
 
   var Columns = [
@@ -326,203 +332,289 @@ tr.selected td { background: #fff8d8; }
     { key: "notes", label: "備考" }
   ];
 
-  // カテゴリ候補（必要ならここに追加）
-  var CategoryOptions = [
-    "（選択）",
-    "食料",
-    "雑貨",
-    "燃料",
-    "被服",
-    "衛生",
-    "整備",
-    "その他"
-  ];
+  // ローカル側の初期候補（SharePointのChoiceが取得できれば上書きされます）
+  var CategoryOptions = ["", "食料", "雑貨", "燃料", "被服", "衛生", "整備", "その他"];
+
+  // ★ここだけ環境依存：SharePointリスト名／列内部名
+  var SP_CONFIG = {
+    listTitle: "後払可能業者一覧",
+    col: {
+      category: "Category",
+      address: "Address",
+      phone: "Phone",
+      contact: "Contact",
+      accounting: "Accounting",
+      notes: "Notes",
+      vendorTitle: "Title" // 業者名はTitle列を使用
+    },
+    categoryIsChoice: true
+  };
 
   w.AppState = State;
   w.AppColumns = Columns;
   w.CategoryOptions = CategoryOptions;
+  w.SP_CONFIG = SP_CONFIG;
 })(window);
 
 
-
-
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/sp_api.js */
 (function (w) {
 
-  function parseCSV(text) {
-    text = text || "";
-    text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-    var lines = text.split("\n");
-    var out = [];
-    var idSeq = 1;
-
-    // 先頭行はヘッダー想定（空行は飛ばす）
-    var start = 0;
-    while (start < lines.length && !lines[start]) start++;
-    if (start >= lines.length) return out;
-
-    for (var i = start + 1; i < lines.length; i++) {
-      var line = lines[i];
-      if (!line) continue;
-
-      var cols = U.parseCsvLine(line);
-      while (cols.length < 7) cols.push("");
-
-      out.push({
-        id: idSeq++,
-        category: cols[0] || "",
-        vendor: cols[1] || "",
-        address: cols[2] || "",
-        phone: cols[3] || "",
-        contact: cols[4] || "",
-        accounting: cols[5] || "",
-        notes: cols[6] || ""
-      });
-    }
-    return out;
-  }
-
-  function loadFromText(text, name) {
-    var rows = parseCSV(text);
-    w.AppState.rows = rows;
-    w.AppState.selectedId = null;
-    w.AppState.lastLoadedName = name || "";
-
-    // カテゴリ候補へ反映（データにあるカテゴリを追加）
-    w.Render.syncCategoryOptionsFromRows();
-
-    // バックアップ
-    try { localStorage.setItem("vendors_backup_csv", text); } catch (e) {}
-
-    w.Render.refreshAll();
-    w.Render.setDbInfo("読込: " + (name || "(CSV)") + " / " + rows.length + "件");
-  }
-
-  function autoLoadIfPossible() {
-    var isHttp = (location.protocol === "http:" || location.protocol === "https:");
-    if (!isHttp) {
-      // file:// の場合：復元があれば復元
-      try {
-        var bk = localStorage.getItem("vendors_backup_csv");
-        if (bk) loadFromText(bk, "localStorage(復元)");
-      } catch (e2) {}
-      return;
-    }
-
+  function xhrJson(method, url, headers, body, ok, ng) {
     try {
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "vendors_db.csv?_=" + new Date().getTime(), true);
+      xhr.open(method, url, true);
+      for (var k in headers) xhr.setRequestHeader(k, headers[k]);
       xhr.onreadystatechange = function () {
         if (xhr.readyState === 4) {
-          if (xhr.status === 200 || xhr.status === 0) {
-            loadFromText(xhr.responseText, "vendors_db.csv");
+          if (xhr.status >= 200 && xhr.status < 300) {
+            var json = null;
+            try { json = JSON.parse(xhr.responseText); } catch (e) {}
+            ok(json, xhr);
           } else {
-            w.Render.setDbInfo("自動読込失敗: vendors_db.csv（手動読込可）");
+            ng(xhr);
           }
         }
       };
-      xhr.send(null);
-    } catch (e3) {
-      w.Render.setDbInfo("自動読込失敗（例外）");
+      xhr.send(body || null);
+    } catch (e2) {
+      ng({ status: 0, responseText: String(e2) });
     }
   }
 
-  function bindManualLoad() {
-    var btn = U.byId("loadBtn");
-    var fileInput = U.byId("dbFile");
-
-    U.on(btn, "click", function () {
-      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        w.Render.setDbInfo("ファイルを選んでください");
-        return;
-      }
-      var f = fileInput.files[0];
-      var reader = new FileReader();
-      reader.onload = function () {
-        loadFromText(reader.result, f.name);
-      };
-      reader.readAsText(f, "utf-8");
-    });
-  }
-
-  w.IO_Load = {
-    autoLoadIfPossible: autoLoadIfPossible,
-    bindManualLoad: bindManualLoad,
-    loadFromText: loadFromText
+  var cache = {
+    digest: null,
+    digestAt: 0,
+    listItemType: null,
+    choices: null,
+    webInfo: null
   };
-})(window);
 
-
-
-
-/* 2025-12-09 JST */
-(function (w) {
-
-  function toCSV(rows) {
-    var header = ["カテゴリー","業者名","住所","電話番号","担当者","入力会計隊","備考"];
-    var lines = [];
-    lines.push(header.join(","));
-
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      var line = [
-        U.csvCell(r.category),
-        U.csvCell(r.vendor),
-        U.csvCell(r.address),
-        U.csvCell(r.phone),
-        U.csvCell(r.contact),
-        U.csvCell(r.accounting),
-        U.csvCell(r.notes)
-      ].join(",");
-      lines.push(line);
-    }
-    return lines.join("\r\n");
-  }
-
-  function saveTextFile(filename, text) {
-    // Excel対策BOM（不要なら削除OK）
-    var bom = "\uFEFF";
-    var blob = new Blob([bom + text], { type: "text/csv;charset=utf-8" });
-
-    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
-      window.navigator.msSaveOrOpenBlob(blob, filename);
+  function getDigest(done, fail) {
+    var now = new Date().getTime();
+    if (cache.digest && (now - cache.digestAt) < (25 * 60 * 1000)) {
+      done(cache.digest);
       return;
     }
-
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 500);
+    w.Render.setStatus("SharePoint: FormDigest取得中...");
+    xhrJson("POST", "/_api/contextinfo",
+      { "Accept": "application/json;odata=verbose" },
+      "",
+      function (json) {
+        try {
+          var d = json.d.GetContextWebInformation.FormDigestValue;
+          cache.digest = d;
+          cache.digestAt = new Date().getTime();
+          done(d);
+        } catch (e) { fail({ status: 0, responseText: "contextinfo parse error" }); }
+      },
+      fail
+    );
   }
 
-  // ★要件：画面に表示されてるもの（検索で抽出された表示中）だけを書き出し
-  function exportVisible() {
-    var rows = w.Search.getFilteredSortedRows(); // 表示中
-    var csv = toCSV(rows);
-
-    var name = "vendors_export_visible.csv";
-    saveTextFile(name, csv);
-
-    w.Render.setDbInfo("CSV書き出し（表示中のみ）: " + name + " / " + rows.length + "件");
+  function getListItemType(done, fail) {
+    if (cache.listItemType) { done(cache.listItemType); return; }
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    w.Render.setStatus("SharePoint: ListItemEntityType取得中...");
+    xhrJson("GET", "/_api/web/lists/getbytitle('" + lt + "')?$select=ListItemEntityTypeFullName",
+      { "Accept": "application/json;odata=verbose" },
+      null,
+      function (json) {
+        try {
+          cache.listItemType = json.d.ListItemEntityTypeFullName;
+          done(cache.listItemType);
+        } catch (e) { fail({ status: 0, responseText: "ListItemEntityType parse error" }); }
+      },
+      fail
+    );
   }
 
-  w.IO_Save = {
-    exportVisible: exportVisible,
-    toCSV: toCSV
+  function getCategoryChoices(done) {
+    if (!w.SP_CONFIG.categoryIsChoice) { done(null); return; }
+    if (cache.choices) { done(cache.choices); return; }
+
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    var col = w.SP_CONFIG.col.category;
+
+    w.Render.setStatus("SharePoint: カテゴリ選択肢取得中...");
+    xhrJson("GET",
+      "/_api/web/lists/getbytitle('" + lt + "')/fields/getbyinternalnameortitle('" + col + "')?$select=Choices",
+      { "Accept": "application/json;odata=verbose" },
+      null,
+      function (json) {
+        try {
+          var arr = json.d.Choices.results;
+          cache.choices = arr;
+          done(arr);
+        } catch (e) {
+          done(null);
+        }
+      },
+      function () { done(null); }
+    );
+  }
+
+  function getWebInfo(done) {
+    if (cache.webInfo) { done(cache.webInfo); return; }
+    w.Render.setStatus("SharePoint: サイト情報取得中...");
+    xhrJson("GET", "/_api/web?$select=Title,Url",
+      { "Accept": "application/json;odata=verbose" },
+      null,
+      function (json) {
+        try {
+          var info = { title: json.d.Title, url: json.d.Url };
+          cache.webInfo = info;
+          done(info);
+        } catch (e) {
+          done({ title: "", url: "" });
+        }
+      },
+      function () { done({ title: "", url: "" }); }
+    );
+  }
+
+  w.SP_API = {
+    xhrJson: xhrJson,
+    getDigest: getDigest,
+    getListItemType: getListItemType,
+    getCategoryChoices: getCategoryChoices,
+    getWebInfo: getWebInfo
   };
 })(window);
 
 
-
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/sp_db.js */
 (function (w) {
 
-  function setDbInfo(msg) {
-    var el = U.byId("dbInfo");
+  function getListInfo(done) {
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    w.SP_API.xhrJson("GET",
+      "/_api/web/lists/getbytitle('" + lt + "')?$select=DefaultViewUrl,Title",
+      { "Accept": "application/json;odata=verbose" },
+      null,
+      function (json) {
+        try {
+          done({ title: json.d.Title, viewUrl: json.d.DefaultViewUrl });
+        } catch (e) {
+          done({ title: w.SP_CONFIG.listTitle, viewUrl: "" });
+        }
+      },
+      function () { done({ title: w.SP_CONFIG.listTitle, viewUrl: "" }); }
+    );
+  }
+
+  function listItems(done, fail) {
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    var col = w.SP_CONFIG.col;
+
+    var url = "/_api/web/lists/getbytitle('" + lt + "')/items?$top=5000"
+      + "&$select=Id," + col.vendorTitle + "," + col.category + "," + col.address + "," + col.phone + "," + col.contact + "," + col.accounting + "," + col.notes;
+
+    w.Render.setStatus("SharePoint: 一覧読込中...");
+    w.SP_API.xhrJson("GET", url,
+      { "Accept": "application/json;odata=verbose" },
+      null,
+      function (json) {
+        try {
+          var results = json.d.results;
+          var rows = [];
+          for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            rows.push({
+              id: r.Id,
+              category: r[col.category] || "",
+              vendor: r[col.vendorTitle] || "",
+              address: r[col.address] || "",
+              phone: r[col.phone] || "",
+              contact: r[col.contact] || "",
+              accounting: r[col.accounting] || "",
+              notes: r[col.notes] || ""
+            });
+          }
+          done(rows);
+        } catch (e) {
+          fail({ status: 0, responseText: "items parse error" });
+        }
+      },
+      fail
+    );
+  }
+
+  function createItem(payload, done, fail) {
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    w.SP_API.getDigest(function (digest) {
+      w.SP_API.getListItemType(function (typeName) {
+        var body = JSON.stringify(payload(typeName));
+        w.Render.setStatus("SharePoint: 追加中...");
+        w.SP_API.xhrJson("POST", "/_api/web/lists/getbytitle('" + lt + "')/items",
+          {
+            "Accept": "application/json;odata=verbose",
+            "Content-Type": "application/json;odata=verbose",
+            "X-RequestDigest": digest
+          },
+          body,
+          function (json) { done(json); },
+          fail
+        );
+      }, fail);
+    }, fail);
+  }
+
+  function updateItem(id, payload, done, fail) {
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    w.SP_API.getDigest(function (digest) {
+      w.SP_API.getListItemType(function (typeName) {
+        var body = JSON.stringify(payload(typeName));
+        w.Render.setStatus("SharePoint: 修正中...");
+        w.SP_API.xhrJson("POST", "/_api/web/lists/getbytitle('" + lt + "')/items(" + id + ")",
+          {
+            "Accept": "application/json;odata=verbose",
+            "Content-Type": "application/json;odata=verbose",
+            "X-RequestDigest": digest,
+            "IF-MATCH": "*",
+            "X-HTTP-Method": "MERGE"
+          },
+          body,
+          function () { done(); },
+          fail
+        );
+      }, fail);
+    }, fail);
+  }
+
+  function deleteItem(id, done, fail) {
+    var lt = encodeURIComponent(w.SP_CONFIG.listTitle);
+    w.SP_API.getDigest(function (digest) {
+      w.Render.setStatus("SharePoint: 削除中...");
+      w.SP_API.xhrJson("POST", "/_api/web/lists/getbytitle('" + lt + "')/items(" + id + ")",
+        {
+          "Accept": "application/json;odata=verbose",
+          "X-RequestDigest": digest,
+          "IF-MATCH": "*",
+          "X-HTTP-Method": "DELETE"
+        },
+        "",
+        function () { done(); },
+        fail
+      );
+    }, fail);
+  }
+
+  w.SP_DB = {
+    getListInfo: getListInfo,
+    listItems: listItems,
+    createItem: createItem,
+    updateItem: updateItem,
+    deleteItem: deleteItem
+  };
+})(window);
+
+
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/render.js */
+(function (w) {
+
+  function setStatus(msg) {
+    var el = U.byId("statusInfo");
     if (el) el.innerHTML = U.escapeHtml(msg || "");
   }
 
@@ -531,31 +623,35 @@ tr.selected td { background: #fff8d8; }
     if (el) el.innerHTML = U.escapeHtml(msg || "");
   }
 
-  function setSearchFixedText(q) {
-    var el = U.byId("searchFixedText");
-    q = U.trim(q || "");
-    if (!el) return;
-    if (q) el.innerHTML = U.escapeHtml("「" + q + "」");
-    else el.innerHTML = "（検索なし）";
-  }
-
   function setSelectInfo(msg) {
     var el = U.byId("selectInfo");
     if (el) el.innerHTML = U.escapeHtml(msg || "");
   }
 
-  function ensureOption(selectEl, value) {
-    value = (value === null || value === undefined) ? "" : String(value);
-    if (!selectEl) return;
-    // 既にあればOK
-    for (var i = 0; i < selectEl.options.length; i++) {
-      if (selectEl.options[i].value === value) return;
+  function setFooterInfo() {
+    var el = U.byId("footerInfo");
+    if (!el) return;
+
+    var s = "";
+    s += "接続先：SharePoint リスト「" + (w.SP_CONFIG.listTitle || "") + "」";
+
+    if (w.AppState.webTitle || w.AppState.webUrl) {
+      s += " / サイト：";
+      if (w.AppState.webTitle) s += w.AppState.webTitle + " ";
+      if (w.AppState.webUrl) s += w.AppState.webUrl;
+    } else {
+      s += " / サイト：" + (location.origin || "") + (location.pathname || "");
     }
-    // 無ければ追加（データにあるカテゴリを表示できるように）
-    var opt = document.createElement("option");
-    opt.value = value;
-    opt.text = value;
-    selectEl.appendChild(opt);
+
+    if (w.AppState.listViewUrl) {
+      s += " / リストURL：" + w.AppState.listViewUrl;
+    }
+
+    if (w.AppState.lastLoadedAt) {
+      s += "<br>最終読込： " + U.escapeHtml(U.formatJST(w.AppState.lastLoadedAt)) + " / 件数： " + U.escapeHtml(String(w.AppState.rows.length));
+    }
+
+    el.innerHTML = s;
   }
 
   function buildCategorySelect() {
@@ -563,46 +659,34 @@ tr.selected td { background: #fff8d8; }
     if (!sel) return;
     sel.innerHTML = "";
 
+    var opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.text = "（選択）";
+    sel.appendChild(opt0);
+
     for (var i = 0; i < w.CategoryOptions.length; i++) {
       var v = w.CategoryOptions[i];
+      if (!v) continue;
       var opt = document.createElement("option");
-      opt.value = (v === "（選択）") ? "" : v;
+      opt.value = v;
       opt.text = v;
       sel.appendChild(opt);
     }
-  }
-
-  // データ内カテゴリを候補に取り込み（重複なし）
-  function syncCategoryOptionsFromRows() {
-    var rows = w.AppState.rows || [];
-    for (var i = 0; i < rows.length; i++) {
-      var c = U.trim(rows[i].category);
-      if (!c) continue;
-      var exists = false;
-      for (var j = 0; j < w.CategoryOptions.length; j++) {
-        if (w.CategoryOptions[j] === c) { exists = true; break; }
-      }
-      if (!exists) w.CategoryOptions.push(c);
-    }
-    buildCategorySelect();
   }
 
   function renderTable(rows) {
     var q = w.AppState.query || "";
     var cols = w.AppColumns;
 
-    var html = "";
-    html += '<table id="mainTable">';
-    html += "<thead><tr>";
+    var html = '<table id="mainTable"><thead><tr>';
     for (var i = 0; i < cols.length; i++) {
       var c = cols[i];
       var arrow = "";
       if (w.AppState.sortKey === c.key) arrow = (w.AppState.sortDir === "asc") ? " ▲" : " ▼";
       html += '<th data-key="' + U.escapeHtml(c.key) + '">' + U.escapeHtml(c.label + arrow) + "</th>";
     }
-    html += "</tr></thead>";
+    html += "</tr></thead><tbody>";
 
-    html += "<tbody>";
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
       var sel = (w.AppState.selectedId === row.id) ? ' class="selected"' : "";
@@ -613,6 +697,7 @@ tr.selected td { background: #fff8d8; }
       }
       html += "</tr>";
     }
+
     html += "</tbody></table>";
 
     var wrap = U.byId("tableWrap");
@@ -627,36 +712,31 @@ tr.selected td { background: #fff8d8; }
 
     var ths = table.getElementsByTagName("th");
     for (var i = 0; i < ths.length; i++) {
-      (function () {
-        var th = ths[i];
+      (function (th) {
         U.on(th, "click", function () {
           var key = th.getAttribute("data-key");
           w.Sort.toggleSort(key);
         });
-      })();
+      })(ths[i]);
     }
 
     var tbody = table.getElementsByTagName("tbody")[0];
     if (!tbody) return;
+
     var trs = tbody.getElementsByTagName("tr");
     for (var j = 0; j < trs.length; j++) {
-      (function () {
-        var tr = trs[j];
+      (function (tr) {
         U.on(tr, "click", function () {
           var id = parseInt(tr.getAttribute("data-id"), 10);
           w.CRUD.selectRow(id);
         });
-      })();
+      })(trs[j]);
     }
   }
 
   function fillForm(row) {
     var sel = U.byId("f_category");
-    if (sel) {
-      var v = row ? (row.category || "") : "";
-      ensureOption(sel, v);
-      sel.value = v;
-    }
+    if (sel) sel.value = row ? (row.category || "") : "";
 
     U.byId("f_vendor").value = row ? (row.vendor || "") : "";
     U.byId("f_address").value = row ? (row.address || "") : "";
@@ -667,41 +747,35 @@ tr.selected td { background: #fff8d8; }
   }
 
   function refreshAll() {
-    // 固定表示：検索語
-    setSearchFixedText(w.AppState.query);
-
     var rows = w.Search.getFilteredSortedRows();
     renderTable(rows);
 
-    var q = U.trim(w.AppState.query);
-    if (q) setSearchInfo("表示中: " + rows.length + "件（検索あり）");
-    else setSearchInfo("表示中: " + rows.length + "件（全件）");
+    // 検索語の固定表示は廃止。件数のみ表示。
+    setSearchInfo("表示中: " + rows.length + "件");
 
-    var sel = w.AppState.selectedId;
-    if (sel) setSelectInfo("選択ID: " + sel);
-    else setSelectInfo("未選択");
+    setSelectInfo(w.AppState.selectedId ? ("選択ID: " + w.AppState.selectedId) : "未選択");
+
+    setFooterInfo();
   }
 
   w.Render = {
-    refreshAll: refreshAll,
-    fillForm: fillForm,
-    setDbInfo: setDbInfo,
+    setStatus: setStatus,
     setSearchInfo: setSearchInfo,
     setSelectInfo: setSelectInfo,
     buildCategorySelect: buildCategorySelect,
-    syncCategoryOptionsFromRows: syncCategoryOptionsFromRows
+    fillForm: fillForm,
+    refreshAll: refreshAll,
+    setFooterInfo: setFooterInfo
   };
 })(window);
 
 
-
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/sort.js */
 (function (w) {
   function compare(a, b) {
     a = (a === null || a === undefined) ? "" : String(a);
     b = (b === null || b === undefined) ? "" : String(b);
-    a = a.toLowerCase();
-    b = b.toLowerCase();
+    a = a.toLowerCase(); b = b.toLowerCase();
     if (a < b) return -1;
     if (a > b) return 1;
     return 0;
@@ -709,18 +783,13 @@ tr.selected td { background: #fff8d8; }
 
   function toggleSort(key) {
     if (!key) return;
-    if (w.AppState.sortKey === key) {
-      w.AppState.sortDir = (w.AppState.sortDir === "asc") ? "desc" : "asc";
-    } else {
-      w.AppState.sortKey = key;
-      w.AppState.sortDir = "asc";
-    }
+    if (w.AppState.sortKey === key) w.AppState.sortDir = (w.AppState.sortDir === "asc") ? "desc" : "asc";
+    else { w.AppState.sortKey = key; w.AppState.sortDir = "asc"; }
     w.Render.refreshAll();
   }
 
   function sortRows(rows) {
-    var key = w.AppState.sortKey;
-    var dir = w.AppState.sortDir;
+    var key = w.AppState.sortKey, dir = w.AppState.sortDir;
     rows.sort(function (r1, r2) {
       var c = compare(r1[key], r2[key]);
       return (dir === "asc") ? c : -c;
@@ -728,17 +797,12 @@ tr.selected td { background: #fff8d8; }
     return rows;
   }
 
-  w.Sort = {
-    toggleSort: toggleSort,
-    sortRows: sortRows
-  };
+  w.Sort = { toggleSort: toggleSort, sortRows: sortRows };
 })(window);
 
 
-
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/search.js */
 (function (w) {
-
   function matchRow(row, q) {
     if (!q) return true;
     q = q.toLowerCase();
@@ -755,16 +819,12 @@ tr.selected td { background: #fff8d8; }
     var q = U.trim(w.AppState.query);
     var src = w.AppState.rows || [];
     var out = [];
-    for (var i = 0; i < src.length; i++) {
-      if (matchRow(src[i], q)) out.push(src[i]);
-    }
-    out = w.Sort.sortRows(out);
-    return out;
+    for (var i = 0; i < src.length; i++) if (matchRow(src[i], q)) out.push(src[i]);
+    return w.Sort.sortRows(out);
   }
 
   function doSearch() {
-    var q = U.byId("searchInput").value;
-    w.AppState.query = U.trim(q);
+    w.AppState.query = U.trim(U.byId("searchInput").value);
     w.Render.refreshAll();
   }
 
@@ -774,54 +834,22 @@ tr.selected td { background: #fff8d8; }
     w.Render.refreshAll();
   }
 
-  w.Search = {
-    doSearch: doSearch,
-    clearSearch: clearSearch,
-    getFilteredSortedRows: getFilteredSortedRows
-  };
+  w.Search = { doSearch: doSearch, clearSearch: clearSearch, getFilteredSortedRows: getFilteredSortedRows };
 })(window);
 
 
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/crud.js */
 (function (w) {
-
-  function nextId() {
-    var rows = w.AppState.rows;
-    var max = 0;
-    for (var i = 0; i < rows.length; i++) if (rows[i].id > max) max = rows[i].id;
-    return max + 1;
-  }
-
-  function readForm() {
-    var sel = U.byId("f_category");
-    return {
-      category: sel ? (sel.value || "") : "",
-      vendor: U.trim(U.byId("f_vendor").value),
-      address: U.trim(U.byId("f_address").value),
-      phone: U.trim(U.byId("f_phone").value),
-      contact: U.trim(U.byId("f_contact").value),
-      accounting: U.trim(U.byId("f_accounting").value),
-      notes: U.trim(U.byId("f_notes").value)
-    };
-  }
-
-  function validate(row) {
-    if (!row.vendor) return "業者名は必須です";
-    return "";
-  }
 
   function findById(id) {
     var rows = w.AppState.rows;
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].id === id) return rows[i];
-    }
+    for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return rows[i];
     return null;
   }
 
   function selectRow(id) {
     w.AppState.selectedId = id;
-    var r = findById(id);
-    w.Render.fillForm(r);
+    w.Render.fillForm(findById(id));
     w.Render.refreshAll();
   }
 
@@ -831,104 +859,175 @@ tr.selected td { background: #fff8d8; }
     w.Render.refreshAll();
   }
 
-  function backupCSV() {
-    // 変更のたびにバックアップ（復元用）
-    try {
-      var csv = w.IO_Save.toCSV(w.AppState.rows);
-      localStorage.setItem("vendors_backup_csv", csv);
-    } catch (e) {}
+  function readForm() {
+    return {
+      category: U.byId("f_category").value || "",
+      vendor: U.trim(U.byId("f_vendor").value),
+      address: U.trim(U.byId("f_address").value),
+      phone: U.trim(U.byId("f_phone").value),
+      contact: U.trim(U.byId("f_contact").value),
+      accounting: U.trim(U.byId("f_accounting").value),
+      notes: U.trim(U.byId("f_notes").value)
+    };
+  }
+
+  function validate(r) {
+    if (!r.vendor) return "業者名は必須です";
+    return "";
+  }
+
+  function addCategoryLocal() {
+    var v = U.trim(U.byId("f_newCategory").value);
+    if (!v) { alert("追加するカテゴリを入力してください"); return; }
+    for (var i = 0; i < w.CategoryOptions.length; i++) {
+      if (w.CategoryOptions[i] === v) { U.byId("f_category").value = v; return; }
+    }
+    w.CategoryOptions.push(v);
+    w.Render.buildCategorySelect();
+    U.byId("f_category").value = v;
+    U.byId("f_newCategory").value = "";
+  }
+
+  function reloadFromSharePoint() {
+    w.Render.setStatus("SharePoint: 読込開始...");
+    w.SP_API.getWebInfo(function (web) {
+      w.AppState.webTitle = web.title || "";
+      w.AppState.webUrl = web.url || "";
+
+      w.SP_DB.getListInfo(function (li) {
+        w.AppState.listViewUrl = li.viewUrl || "";
+
+        w.SP_DB.listItems(function (rows) {
+          w.AppState.rows = rows;
+          w.AppState.lastLoadedAt = new Date();
+
+          // カテゴリ候補：Choice取得できれば上書き
+          w.SP_API.getCategoryChoices(function (choices) {
+            if (choices && choices.length) {
+              w.CategoryOptions = [""]; // 先頭空
+              for (var i = 0; i < choices.length; i++) w.CategoryOptions.push(choices[i]);
+              w.Render.buildCategorySelect();
+            } else {
+              // Choiceが取れなければ、データのカテゴリを候補へ追加
+              for (var r = 0; r < rows.length; r++) {
+                var c = U.trim(rows[r].category);
+                if (!c) continue;
+                var exists = false;
+                for (var j = 0; j < w.CategoryOptions.length; j++) {
+                  if (w.CategoryOptions[j] === c) { exists = true; break; }
+                }
+                if (!exists) w.CategoryOptions.push(c);
+              }
+              w.Render.buildCategorySelect();
+            }
+
+            w.Render.setStatus("SharePoint: 読込完了（" + rows.length + "件）");
+            clearSelection();
+          });
+        }, function (xhr) {
+          w.Render.setStatus("SharePoint読込失敗 status=" + xhr.status);
+          alert("SharePoint読込失敗: status=" + xhr.status);
+        });
+      });
+    });
   }
 
   function addRow() {
-    var row = readForm();
-    var err = validate(row);
+    var r = readForm();
+    var err = validate(r);
     if (err) { alert(err); return; }
 
-    row.id = nextId();
-    w.AppState.rows.push(row);
+    var col = w.SP_CONFIG.col;
 
-    // カテゴリ候補へ反映
-    if (row.category) {
-      var exists = false;
-      for (var i = 0; i < w.CategoryOptions.length; i++) {
-        if (w.CategoryOptions[i] === row.category) { exists = true; break; }
-      }
-      if (!exists) w.CategoryOptions.push(row.category);
-      w.Render.buildCategorySelect();
-    }
-
-    backupCSV();
-    clearSelection();
-    w.Render.refreshAll();
+    w.SP_DB.createItem(function (typeName) {
+      var o = { "__metadata": { "type": typeName } };
+      o[col.vendorTitle] = r.vendor;
+      o[col.category] = r.category;
+      o[col.address] = r.address;
+      o[col.phone] = r.phone;
+      o[col.contact] = r.contact;
+      o[col.accounting] = r.accounting;
+      o[col.notes] = r.notes;
+      return o;
+    }, function () {
+      reloadFromSharePoint();
+    }, function (xhr) {
+      w.Render.setStatus("追加失敗 status=" + xhr.status);
+      alert("追加失敗: status=" + xhr.status);
+    });
   }
 
   function updateRow() {
     var id = w.AppState.selectedId;
     if (!id) { alert("修正する行を選択してください"); return; }
 
-    var cur = findById(id);
-    if (!cur) { alert("選択行が見つかりません"); return; }
-
-    var row = readForm();
-    var err = validate(row);
+    var r = readForm();
+    var err = validate(r);
     if (err) { alert(err); return; }
 
-    cur.category = row.category;
-    cur.vendor = row.vendor;
-    cur.address = row.address;
-    cur.phone = row.phone;
-    cur.contact = row.contact;
-    cur.accounting = row.accounting;
-    cur.notes = row.notes;
+    var col = w.SP_CONFIG.col;
 
-    // カテゴリ候補へ反映
-    if (row.category) {
-      var exists = false;
-      for (var i2 = 0; i2 < w.CategoryOptions.length; i2++) {
-        if (w.CategoryOptions[i2] === row.category) { exists = true; break; }
-      }
-      if (!exists) w.CategoryOptions.push(row.category);
-      w.Render.buildCategorySelect();
-      // 選択状態を保持
-      U.byId("f_category").value = row.category;
-    }
-
-    backupCSV();
-    w.Render.refreshAll();
+    w.SP_DB.updateItem(id, function (typeName) {
+      var o = { "__metadata": { "type": typeName } };
+      o[col.vendorTitle] = r.vendor;
+      o[col.category] = r.category;
+      o[col.address] = r.address;
+      o[col.phone] = r.phone;
+      o[col.contact] = r.contact;
+      o[col.accounting] = r.accounting;
+      o[col.notes] = r.notes;
+      return o;
+    }, function () {
+      reloadFromSharePoint();
+    }, function (xhr) {
+      w.Render.setStatus("修正失敗 status=" + xhr.status);
+      alert("修正失敗: status=" + xhr.status);
+    });
   }
 
   function deleteRow() {
     var id = w.AppState.selectedId;
     if (!id) { alert("削除する行を選択してください"); return; }
-    if (!confirm("選択行を削除します。よろしいですか？")) return;
 
-    var rows = w.AppState.rows;
-    var out = [];
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].id !== id) out.push(rows[i]);
-    }
-    w.AppState.rows = out;
+    var row = findById(id);
+    if (!row) { alert("選択行が見つかりません"); return; }
 
-    backupCSV();
-    clearSelection();
-    w.Render.refreshAll();
+    // ★必須：削除の再確認（内容も表示）
+    var msg = "";
+    msg += "確認\n";
+    msg += "このデータを削除します。よろしいですか？\n\n";
+    msg += "カテゴリー： " + (row.category || "") + "\n";
+    msg += "業者名： " + (row.vendor || "") + "\n";
+    msg += "住所： " + (row.address || "") + "\n";
+    msg += "電話番号： " + (row.phone || "") + "\n";
+    msg += "担当者： " + (row.contact || "") + "\n";
+    msg += "入力会計隊： " + (row.accounting || "") + "\n";
+    msg += "備考： " + (row.notes || "") + "\n";
+
+    if (!confirm(msg)) return;
+
+    w.SP_DB.deleteItem(id, function () {
+      reloadFromSharePoint();
+    }, function (xhr) {
+      w.Render.setStatus("削除失敗 status=" + xhr.status);
+      alert("削除失敗: status=" + xhr.status);
+    });
   }
 
-  function addCategory() {
-    var v = U.trim(U.byId("f_newCategory").value);
-    if (!v) { alert("追加するカテゴリを入力してください"); return; }
+  // 管理パネルの開閉
+  function toggleAdminPanel() {
+    var panel = U.byId("adminPanel");
+    var toggle = U.byId("adminToggle");
+    if (!panel || !toggle) return;
 
-    for (var i = 0; i < w.CategoryOptions.length; i++) {
-      if (w.CategoryOptions[i] === v) {
-        alert("すでにあります");
-        U.byId("f_category").value = v;
-        return;
-      }
+    var isHidden = panel.className.indexOf("hidden") !== -1;
+    if (isHidden) {
+      panel.className = panel.className.replace(/\bhidden\b/g, "");
+      toggle.innerHTML = "▼ 管理（追加・修正・削除）";
+    } else {
+      if (panel.className.indexOf("hidden") === -1) panel.className += " hidden";
+      toggle.innerHTML = "▶ 管理（追加・修正・削除）";
     }
-    w.CategoryOptions.push(v);
-    w.Render.buildCategorySelect();
-    U.byId("f_category").value = v;
-    U.byId("f_newCategory").value = "";
   }
 
   w.CRUD = {
@@ -937,21 +1036,72 @@ tr.selected td { background: #fff8d8; }
     addRow: addRow,
     updateRow: updateRow,
     deleteRow: deleteRow,
-    addCategory: addCategory
+    addCategoryLocal: addCategoryLocal,
+    reloadFromSharePoint: reloadFromSharePoint,
+    toggleAdminPanel: toggleAdminPanel
   };
 })(window);
 
 
-
-/* 2025-12-09 JST */
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/print.js */
 (function (w) {
   function doPrint() { window.print(); }
   w.Print = { doPrint: doPrint };
 })(window);
 
 
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/export_csv.js */
+(function (w) {
 
-/* 2025-12-09 JST */
+  function toCSV(rows) {
+    var header = ["カテゴリー","業者名","住所","電話番号","担当者","入力会計隊","備考"];
+    var lines = [header.join(",")];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      lines.push([
+        U.csvCell(r.category),
+        U.csvCell(r.vendor),
+        U.csvCell(r.address),
+        U.csvCell(r.phone),
+        U.csvCell(r.contact),
+        U.csvCell(r.accounting),
+        U.csvCell(r.notes)
+      ].join(","));
+    }
+    return lines.join("\r\n");
+  }
+
+  function saveTextFile(filename, text) {
+    var bom = "\uFEFF";
+    var blob = new Blob([bom + text], { type: "text/csv;charset=utf-8" });
+
+    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+      window.navigator.msSaveOrOpenBlob(blob, filename);
+      return;
+    }
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 500);
+  }
+
+  // ★表示中（検索で絞り込まれた結果）だけ
+  function exportVisible() {
+    var rows = w.Search.getFilteredSortedRows();
+    var csv = toCSV(rows);
+    var name = "vendors_export_visible.csv";
+    saveTextFile(name, csv);
+    w.Render.setStatus("CSV書き出し（表示中のみ）: " + rows.length + "件");
+  }
+
+  w.ExportCSV = { exportVisible: exportVisible };
+})(window);
+
+
+/* 作成日時: 2025-12-09 13:00 JST | ファイル名: js/app.js */
 (function (w) {
 
   function bindButtons() {
@@ -964,37 +1114,27 @@ tr.selected td { background: #fff8d8; }
       if (code === 13) w.Search.doSearch();
     });
 
+    U.on(U.byId("reloadBtn"), "click", function () { w.CRUD.reloadFromSharePoint(); });
     U.on(U.byId("printBtn"), "click", function () { w.Print.doPrint(); });
-
-    // ★表示中のみ書き出し
-    U.on(U.byId("exportBtn"), "click", function () { w.IO_Save.exportVisible(); });
+    U.on(U.byId("exportBtn"), "click", function () { w.ExportCSV.exportVisible(); });
 
     U.on(U.byId("addBtn"), "click", function () { w.CRUD.addRow(); });
     U.on(U.byId("updateBtn"), "click", function () { w.CRUD.updateRow(); });
     U.on(U.byId("deleteBtn"), "click", function () { w.CRUD.deleteRow(); });
     U.on(U.byId("clearBtn"), "click", function () { w.CRUD.clearSelection(); });
 
-    U.on(U.byId("addCategoryBtn"), "click", function () { w.CRUD.addCategory(); });
-  }
+    U.on(U.byId("addCategoryBtn"), "click", function () { w.CRUD.addCategoryLocal(); });
 
-  function initEmptyIfNeeded() {
-    if (!w.AppState.rows || w.AppState.rows.length === 0) {
-      w.AppState.rows = [];
-      w.Render.refreshAll();
-      w.Render.setDbInfo("データ未読込（下の「DB読込」から読み込めます）");
-    }
+    // ★管理パネル：普段は閉じていて、必要時に開く
+    U.on(U.byId("adminToggle"), "click", function () { w.CRUD.toggleAdminPanel(); });
   }
 
   function init() {
-    // カテゴリselect構築
     w.Render.buildCategorySelect();
-
     bindButtons();
-    w.IO_Load.bindManualLoad();
-    w.IO_Load.autoLoadIfPossible();
-    initEmptyIfNeeded();
 
-    // 初期固定表示
+    // 初回読込
+    w.CRUD.reloadFromSharePoint();
     w.Render.refreshAll();
   }
 
@@ -1002,8 +1142,6 @@ tr.selected td { background: #fff8d8; }
   else U.on(window, "load", init);
 
 })(window);
-
-
 
 
 
