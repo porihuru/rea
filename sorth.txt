@@ -1,0 +1,1010 @@
+vendor_db/
+  index.html
+  vendors_db.csv
+  css/
+    style.css
+  js/
+    util.js
+    state.js
+    io_load.js
+    io_save.js
+    render.js
+    sort.js
+    search.js
+    crud.js
+    print.js
+    app.js
+
+
+
+カテゴリー,業者名,住所,電話番号,担当者,入力会計隊,備考
+食料,日本栄養食品㈱,北海道○○市○○,011-000-0000,山田,滝川,後払可
+雑貨,○○商店,北海道△△市△△,0166-000-0000,佐藤,旭川,"備考にカンマ,が入る例"
+
+
+
+<!-- 2025-12-09 JST -->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>後払可能業者一覧</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="page">
+    <h1>後払可能業者一覧</h1>
+
+    <!-- 上部：検索/ボタン/検索語固定表示 -->
+    <div class="toolbar no-print">
+      <input id="searchInput" class="search" type="text" placeholder="検索（全項目）">
+      <button id="searchBtn" class="btn">検索</button>
+      <button id="clearSearchBtn" class="btn ghost">検索クリア</button>
+      <button id="printBtn" class="btn">印刷</button>
+      <button id="exportBtn" class="btn">CSV書き出し（表示中のみ）</button>
+
+      <div class="search-fixed">
+        <div class="search-fixed-label">検索語（固定表示）</div>
+        <div id="searchFixedText" class="search-fixed-text">（検索なし）</div>
+        <div id="searchInfo" class="info"></div>
+      </div>
+    </div>
+
+    <!-- CRUDフォーム -->
+    <div class="form no-print">
+      <div class="row">
+        <div class="field">
+          <div class="label">カテゴリー（プルダウン）</div>
+          <select id="f_category" class="select"></select>
+        </div>
+
+        <div class="field addcat">
+          <div class="label">新規カテゴリ追加</div>
+          <input id="f_newCategory" type="text" placeholder="例：燃料">
+          <button id="addCategoryBtn" class="btn smallbtn">追加</button>
+        </div>
+
+        <div class="field">
+          <div class="label">業者名</div>
+          <input id="f_vendor" type="text">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field wide">
+          <div class="label">住所</div>
+          <input id="f_address" type="text">
+        </a>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <div class="label">電話番号</div>
+          <input id="f_phone" type="text">
+        </div>
+        <div class="field">
+          <div class="label">担当者</div>
+          <input id="f_contact" type="text">
+        </div>
+        <div class="field">
+          <div class="label">入力会計隊</div>
+          <input id="f_accounting" type="text">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field wide">
+          <div class="label">備考</div>
+          <input id="f_notes" type="text">
+        </div>
+      </div>
+
+      <div class="row actions">
+        <button id="addBtn" class="btn">追加</button>
+        <button id="updateBtn" class="btn">修正</button>
+        <button id="deleteBtn" class="btn danger">削除</button>
+        <button id="clearBtn" class="btn ghost">選択解除</button>
+        <span id="selectInfo" class="info"></span>
+      </div>
+    </div>
+
+    <!-- テーブル -->
+    <div id="tableWrap" class="table-wrap"></div>
+
+    <!-- DB読込：オフラインWebサーバ(http)なら自動読込。file://は手動読込。 -->
+    <div class="db no-print">
+      <div class="db-title">DB（CSV）読込</div>
+      <div class="db-row">
+        <input id="dbFile" type="file" accept=".csv,text/csv,text/plain">
+        <button id="loadBtn" class="btn">読込</button>
+        <span id="dbInfo" class="info"></span>
+      </div>
+      <div class="hint">
+        ※ http://（オフラインWebサーバ）で開くと vendors_db.csv を自動読込します。<br>
+        ※ file:// 直開きの場合は自動読込できないので、上の「読込」を使ってください。
+      </div>
+    </div>
+  </div>
+
+  <!-- JS（IE10相当想定：ES5、importなし） -->
+  <script src="js/util.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/io_load.js"></script>
+  <script src="js/io_save.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/sort.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/crud.js"></script>
+  <script src="js/print.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
+
+
+/* 2025-12-09 JST */
+body { margin: 0; font-family: "Meiryo","MS PGothic",sans-serif; background: #f5f5f5; }
+.page { max-width: 1250px; margin: 0 auto; padding: 14px; background: #fff; }
+h1 { margin: 6px 0 12px; font-size: 22px; }
+
+.toolbar { padding: 10px; border: 1px solid #ddd; background: #fafafa; }
+.search { width: 360px; padding: 8px; font-size: 14px; }
+.btn { padding: 8px 12px; margin-left: 6px; cursor: pointer; font-size: 14px; }
+.btn.danger { background: #ffe8e8; }
+.btn.ghost { background: #f2f2f2; }
+.smallbtn { padding: 6px 10px; font-size: 12px; margin-left: 6px; }
+.info { margin-left: 10px; color: #444; font-size: 12px; }
+
+.search-fixed { margin-top: 10px; padding: 8px; border: 1px solid #e2e2e2; background: #fff; }
+.search-fixed-label { font-size: 12px; color: #333; margin-bottom: 4px; }
+.search-fixed-text { font-size: 16px; font-weight: bold; color: #222; }
+
+.form { margin-top: 10px; padding: 10px; border: 1px solid #ddd; }
+.row { display: block; margin: 8px 0; }
+.field { display: inline-block; vertical-align: top; margin-right: 10px; }
+.field.wide { width: 98%; }
+.label { font-size: 12px; color: #333; margin-bottom: 2px; }
+.field input { width: 260px; padding: 7px; }
+.field.wide input { width: 98%; }
+.select { width: 220px; padding: 7px; }
+.addcat input { width: 160px; }
+
+.actions { margin-top: 10px; }
+.table-wrap { margin-top: 10px; border: 1px solid #ddd; overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
+th { background: #f0f6ff; cursor: pointer; user-select: none; }
+tr.selected td { background: #fff8d8; }
+.hl { color: #d00; font-weight: bold; }
+
+.db { margin-top: 12px; padding: 10px; border: 1px dashed #bbb; background: #fcfcfc; }
+.db-title { font-weight: bold; margin-bottom: 6px; }
+.hint { margin-top: 6px; font-size: 12px; color: #666; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .page { max-width: none; margin: 0; padding: 0; border: none; }
+  th { background: #eee !important; }
+}
+
+
+/* 2025-12-09 JST */
+(function (w) {
+  function byId(id) { return document.getElementById(id); }
+
+  function on(el, ev, fn) {
+    if (!el) return;
+    if (el.addEventListener) el.addEventListener(ev, fn, false);
+    else if (el.attachEvent) el.attachEvent("on" + ev, fn);
+  }
+
+  function trim(s) { return (s || "").replace(/^\s+|\s+$/g, ""); }
+
+  function escapeHtml(s) {
+    s = (s === null || s === undefined) ? "" : String(s);
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function highlightText(text, query) {
+    text = (text === null || text === undefined) ? "" : String(text);
+    query = (query === null || query === undefined) ? "" : String(query);
+    query = trim(query);
+    if (!query) return escapeHtml(text);
+
+    var src = text;
+    var low = src.toLowerCase();
+    var q = query.toLowerCase();
+
+    var out = "";
+    var i = 0;
+    while (true) {
+      var p = low.indexOf(q, i);
+      if (p === -1) break;
+      out += escapeHtml(src.substring(i, p));
+      out += '<span class="hl">' + escapeHtml(src.substring(p, p + query.length)) + "</span>";
+      i = p + query.length;
+    }
+    out += escapeHtml(src.substring(i));
+    return out;
+  }
+
+  // CSV 1行パース（ダブルクォート対応）
+  function parseCsvLine(line) {
+    var out = [];
+    var cur = "";
+    var inQ = false;
+    var i = 0;
+    while (i < line.length) {
+      var ch = line.charAt(i);
+      if (inQ) {
+        if (ch === '"') {
+          // "" -> "
+          if (i + 1 < line.length && line.charAt(i + 1) === '"') {
+            cur += '"';
+            i += 2;
+            continue;
+          } else {
+            inQ = false;
+            i++;
+            continue;
+          }
+        } else {
+          cur += ch;
+          i++;
+          continue;
+        }
+      } else {
+        if (ch === '"') {
+          inQ = true;
+          i++;
+          continue;
+        }
+        if (ch === ',') {
+          out.push(cur);
+          cur = "";
+          i++;
+          continue;
+        }
+        cur += ch;
+        i++;
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+
+  // CSV セル作成（必要時のみクォート）
+  function csvCell(s) {
+    s = (s === null || s === undefined) ? "" : String(s);
+    // 改行/カンマ/クォートがあればクォート
+    if (/[",\r\n]/.test(s)) {
+      s = s.replace(/"/g, '""');
+      return '"' + s + '"';
+    }
+    return s;
+  }
+
+  w.U = {
+    byId: byId,
+    on: on,
+    trim: trim,
+    escapeHtml: escapeHtml,
+    highlightText: highlightText,
+    parseCsvLine: parseCsvLine,
+    csvCell: csvCell
+  };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+  var State = {
+    rows: [],            // {id, category, vendor, address, phone, contact, accounting, notes}
+    selectedId: null,
+    sortKey: "vendor",
+    sortDir: "asc",
+    query: "",
+    lastLoadedName: ""
+  };
+
+  var Columns = [
+    { key: "category", label: "カテゴリー" },
+    { key: "vendor", label: "業者名" },
+    { key: "address", label: "住所" },
+    { key: "phone", label: "電話番号" },
+    { key: "contact", label: "担当者" },
+    { key: "accounting", label: "入力会計隊" },
+    { key: "notes", label: "備考" }
+  ];
+
+  // カテゴリ候補（必要ならここに追加）
+  var CategoryOptions = [
+    "（選択）",
+    "食料",
+    "雑貨",
+    "燃料",
+    "被服",
+    "衛生",
+    "整備",
+    "その他"
+  ];
+
+  w.AppState = State;
+  w.AppColumns = Columns;
+  w.CategoryOptions = CategoryOptions;
+})(window);
+
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function parseCSV(text) {
+    text = text || "";
+    text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    var lines = text.split("\n");
+    var out = [];
+    var idSeq = 1;
+
+    // 先頭行はヘッダー想定（空行は飛ばす）
+    var start = 0;
+    while (start < lines.length && !lines[start]) start++;
+    if (start >= lines.length) return out;
+
+    for (var i = start + 1; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line) continue;
+
+      var cols = U.parseCsvLine(line);
+      while (cols.length < 7) cols.push("");
+
+      out.push({
+        id: idSeq++,
+        category: cols[0] || "",
+        vendor: cols[1] || "",
+        address: cols[2] || "",
+        phone: cols[3] || "",
+        contact: cols[4] || "",
+        accounting: cols[5] || "",
+        notes: cols[6] || ""
+      });
+    }
+    return out;
+  }
+
+  function loadFromText(text, name) {
+    var rows = parseCSV(text);
+    w.AppState.rows = rows;
+    w.AppState.selectedId = null;
+    w.AppState.lastLoadedName = name || "";
+
+    // カテゴリ候補へ反映（データにあるカテゴリを追加）
+    w.Render.syncCategoryOptionsFromRows();
+
+    // バックアップ
+    try { localStorage.setItem("vendors_backup_csv", text); } catch (e) {}
+
+    w.Render.refreshAll();
+    w.Render.setDbInfo("読込: " + (name || "(CSV)") + " / " + rows.length + "件");
+  }
+
+  function autoLoadIfPossible() {
+    var isHttp = (location.protocol === "http:" || location.protocol === "https:");
+    if (!isHttp) {
+      // file:// の場合：復元があれば復元
+      try {
+        var bk = localStorage.getItem("vendors_backup_csv");
+        if (bk) loadFromText(bk, "localStorage(復元)");
+      } catch (e2) {}
+      return;
+    }
+
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "vendors_db.csv?_=" + new Date().getTime(), true);
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 0) {
+            loadFromText(xhr.responseText, "vendors_db.csv");
+          } else {
+            w.Render.setDbInfo("自動読込失敗: vendors_db.csv（手動読込可）");
+          }
+        }
+      };
+      xhr.send(null);
+    } catch (e3) {
+      w.Render.setDbInfo("自動読込失敗（例外）");
+    }
+  }
+
+  function bindManualLoad() {
+    var btn = U.byId("loadBtn");
+    var fileInput = U.byId("dbFile");
+
+    U.on(btn, "click", function () {
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        w.Render.setDbInfo("ファイルを選んでください");
+        return;
+      }
+      var f = fileInput.files[0];
+      var reader = new FileReader();
+      reader.onload = function () {
+        loadFromText(reader.result, f.name);
+      };
+      reader.readAsText(f, "utf-8");
+    });
+  }
+
+  w.IO_Load = {
+    autoLoadIfPossible: autoLoadIfPossible,
+    bindManualLoad: bindManualLoad,
+    loadFromText: loadFromText
+  };
+})(window);
+
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function toCSV(rows) {
+    var header = ["カテゴリー","業者名","住所","電話番号","担当者","入力会計隊","備考"];
+    var lines = [];
+    lines.push(header.join(","));
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var line = [
+        U.csvCell(r.category),
+        U.csvCell(r.vendor),
+        U.csvCell(r.address),
+        U.csvCell(r.phone),
+        U.csvCell(r.contact),
+        U.csvCell(r.accounting),
+        U.csvCell(r.notes)
+      ].join(",");
+      lines.push(line);
+    }
+    return lines.join("\r\n");
+  }
+
+  function saveTextFile(filename, text) {
+    // Excel対策BOM（不要なら削除OK）
+    var bom = "\uFEFF";
+    var blob = new Blob([bom + text], { type: "text/csv;charset=utf-8" });
+
+    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+      window.navigator.msSaveOrOpenBlob(blob, filename);
+      return;
+    }
+
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 500);
+  }
+
+  // ★要件：画面に表示されてるもの（検索で抽出された表示中）だけを書き出し
+  function exportVisible() {
+    var rows = w.Search.getFilteredSortedRows(); // 表示中
+    var csv = toCSV(rows);
+
+    var name = "vendors_export_visible.csv";
+    saveTextFile(name, csv);
+
+    w.Render.setDbInfo("CSV書き出し（表示中のみ）: " + name + " / " + rows.length + "件");
+  }
+
+  w.IO_Save = {
+    exportVisible: exportVisible,
+    toCSV: toCSV
+  };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function setDbInfo(msg) {
+    var el = U.byId("dbInfo");
+    if (el) el.innerHTML = U.escapeHtml(msg || "");
+  }
+
+  function setSearchInfo(msg) {
+    var el = U.byId("searchInfo");
+    if (el) el.innerHTML = U.escapeHtml(msg || "");
+  }
+
+  function setSearchFixedText(q) {
+    var el = U.byId("searchFixedText");
+    q = U.trim(q || "");
+    if (!el) return;
+    if (q) el.innerHTML = U.escapeHtml("「" + q + "」");
+    else el.innerHTML = "（検索なし）";
+  }
+
+  function setSelectInfo(msg) {
+    var el = U.byId("selectInfo");
+    if (el) el.innerHTML = U.escapeHtml(msg || "");
+  }
+
+  function ensureOption(selectEl, value) {
+    value = (value === null || value === undefined) ? "" : String(value);
+    if (!selectEl) return;
+    // 既にあればOK
+    for (var i = 0; i < selectEl.options.length; i++) {
+      if (selectEl.options[i].value === value) return;
+    }
+    // 無ければ追加（データにあるカテゴリを表示できるように）
+    var opt = document.createElement("option");
+    opt.value = value;
+    opt.text = value;
+    selectEl.appendChild(opt);
+  }
+
+  function buildCategorySelect() {
+    var sel = U.byId("f_category");
+    if (!sel) return;
+    sel.innerHTML = "";
+
+    for (var i = 0; i < w.CategoryOptions.length; i++) {
+      var v = w.CategoryOptions[i];
+      var opt = document.createElement("option");
+      opt.value = (v === "（選択）") ? "" : v;
+      opt.text = v;
+      sel.appendChild(opt);
+    }
+  }
+
+  // データ内カテゴリを候補に取り込み（重複なし）
+  function syncCategoryOptionsFromRows() {
+    var rows = w.AppState.rows || [];
+    for (var i = 0; i < rows.length; i++) {
+      var c = U.trim(rows[i].category);
+      if (!c) continue;
+      var exists = false;
+      for (var j = 0; j < w.CategoryOptions.length; j++) {
+        if (w.CategoryOptions[j] === c) { exists = true; break; }
+      }
+      if (!exists) w.CategoryOptions.push(c);
+    }
+    buildCategorySelect();
+  }
+
+  function renderTable(rows) {
+    var q = w.AppState.query || "";
+    var cols = w.AppColumns;
+
+    var html = "";
+    html += '<table id="mainTable">';
+    html += "<thead><tr>";
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      var arrow = "";
+      if (w.AppState.sortKey === c.key) arrow = (w.AppState.sortDir === "asc") ? " ▲" : " ▼";
+      html += '<th data-key="' + U.escapeHtml(c.key) + '">' + U.escapeHtml(c.label + arrow) + "</th>";
+    }
+    html += "</tr></thead>";
+
+    html += "<tbody>";
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      var sel = (w.AppState.selectedId === row.id) ? ' class="selected"' : "";
+      html += '<tr data-id="' + row.id + '"' + sel + ">";
+      for (var j = 0; j < cols.length; j++) {
+        var key = cols[j].key;
+        html += "<td>" + U.highlightText(row[key], q) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+
+    var wrap = U.byId("tableWrap");
+    if (wrap) wrap.innerHTML = html;
+
+    bindTableEvents();
+  }
+
+  function bindTableEvents() {
+    var table = U.byId("mainTable");
+    if (!table) return;
+
+    var ths = table.getElementsByTagName("th");
+    for (var i = 0; i < ths.length; i++) {
+      (function () {
+        var th = ths[i];
+        U.on(th, "click", function () {
+          var key = th.getAttribute("data-key");
+          w.Sort.toggleSort(key);
+        });
+      })();
+    }
+
+    var tbody = table.getElementsByTagName("tbody")[0];
+    if (!tbody) return;
+    var trs = tbody.getElementsByTagName("tr");
+    for (var j = 0; j < trs.length; j++) {
+      (function () {
+        var tr = trs[j];
+        U.on(tr, "click", function () {
+          var id = parseInt(tr.getAttribute("data-id"), 10);
+          w.CRUD.selectRow(id);
+        });
+      })();
+    }
+  }
+
+  function fillForm(row) {
+    var sel = U.byId("f_category");
+    if (sel) {
+      var v = row ? (row.category || "") : "";
+      ensureOption(sel, v);
+      sel.value = v;
+    }
+
+    U.byId("f_vendor").value = row ? (row.vendor || "") : "";
+    U.byId("f_address").value = row ? (row.address || "") : "";
+    U.byId("f_phone").value = row ? (row.phone || "") : "";
+    U.byId("f_contact").value = row ? (row.contact || "") : "";
+    U.byId("f_accounting").value = row ? (row.accounting || "") : "";
+    U.byId("f_notes").value = row ? (row.notes || "") : "";
+  }
+
+  function refreshAll() {
+    // 固定表示：検索語
+    setSearchFixedText(w.AppState.query);
+
+    var rows = w.Search.getFilteredSortedRows();
+    renderTable(rows);
+
+    var q = U.trim(w.AppState.query);
+    if (q) setSearchInfo("表示中: " + rows.length + "件（検索あり）");
+    else setSearchInfo("表示中: " + rows.length + "件（全件）");
+
+    var sel = w.AppState.selectedId;
+    if (sel) setSelectInfo("選択ID: " + sel);
+    else setSelectInfo("未選択");
+  }
+
+  w.Render = {
+    refreshAll: refreshAll,
+    fillForm: fillForm,
+    setDbInfo: setDbInfo,
+    setSearchInfo: setSearchInfo,
+    setSelectInfo: setSelectInfo,
+    buildCategorySelect: buildCategorySelect,
+    syncCategoryOptionsFromRows: syncCategoryOptionsFromRows
+  };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+  function compare(a, b) {
+    a = (a === null || a === undefined) ? "" : String(a);
+    b = (b === null || b === undefined) ? "" : String(b);
+    a = a.toLowerCase();
+    b = b.toLowerCase();
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  }
+
+  function toggleSort(key) {
+    if (!key) return;
+    if (w.AppState.sortKey === key) {
+      w.AppState.sortDir = (w.AppState.sortDir === "asc") ? "desc" : "asc";
+    } else {
+      w.AppState.sortKey = key;
+      w.AppState.sortDir = "asc";
+    }
+    w.Render.refreshAll();
+  }
+
+  function sortRows(rows) {
+    var key = w.AppState.sortKey;
+    var dir = w.AppState.sortDir;
+    rows.sort(function (r1, r2) {
+      var c = compare(r1[key], r2[key]);
+      return (dir === "asc") ? c : -c;
+    });
+    return rows;
+  }
+
+  w.Sort = {
+    toggleSort: toggleSort,
+    sortRows: sortRows
+  };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function matchRow(row, q) {
+    if (!q) return true;
+    q = q.toLowerCase();
+    var cols = w.AppColumns;
+    for (var i = 0; i < cols.length; i++) {
+      var key = cols[i].key;
+      var v = (row[key] === null || row[key] === undefined) ? "" : String(row[key]);
+      if (v.toLowerCase().indexOf(q) !== -1) return true;
+    }
+    return false;
+  }
+
+  function getFilteredSortedRows() {
+    var q = U.trim(w.AppState.query);
+    var src = w.AppState.rows || [];
+    var out = [];
+    for (var i = 0; i < src.length; i++) {
+      if (matchRow(src[i], q)) out.push(src[i]);
+    }
+    out = w.Sort.sortRows(out);
+    return out;
+  }
+
+  function doSearch() {
+    var q = U.byId("searchInput").value;
+    w.AppState.query = U.trim(q);
+    w.Render.refreshAll();
+  }
+
+  function clearSearch() {
+    U.byId("searchInput").value = "";
+    w.AppState.query = "";
+    w.Render.refreshAll();
+  }
+
+  w.Search = {
+    doSearch: doSearch,
+    clearSearch: clearSearch,
+    getFilteredSortedRows: getFilteredSortedRows
+  };
+})(window);
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function nextId() {
+    var rows = w.AppState.rows;
+    var max = 0;
+    for (var i = 0; i < rows.length; i++) if (rows[i].id > max) max = rows[i].id;
+    return max + 1;
+  }
+
+  function readForm() {
+    var sel = U.byId("f_category");
+    return {
+      category: sel ? (sel.value || "") : "",
+      vendor: U.trim(U.byId("f_vendor").value),
+      address: U.trim(U.byId("f_address").value),
+      phone: U.trim(U.byId("f_phone").value),
+      contact: U.trim(U.byId("f_contact").value),
+      accounting: U.trim(U.byId("f_accounting").value),
+      notes: U.trim(U.byId("f_notes").value)
+    };
+  }
+
+  function validate(row) {
+    if (!row.vendor) return "業者名は必須です";
+    return "";
+  }
+
+  function findById(id) {
+    var rows = w.AppState.rows;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].id === id) return rows[i];
+    }
+    return null;
+  }
+
+  function selectRow(id) {
+    w.AppState.selectedId = id;
+    var r = findById(id);
+    w.Render.fillForm(r);
+    w.Render.refreshAll();
+  }
+
+  function clearSelection() {
+    w.AppState.selectedId = null;
+    w.Render.fillForm(null);
+    w.Render.refreshAll();
+  }
+
+  function backupCSV() {
+    // 変更のたびにバックアップ（復元用）
+    try {
+      var csv = w.IO_Save.toCSV(w.AppState.rows);
+      localStorage.setItem("vendors_backup_csv", csv);
+    } catch (e) {}
+  }
+
+  function addRow() {
+    var row = readForm();
+    var err = validate(row);
+    if (err) { alert(err); return; }
+
+    row.id = nextId();
+    w.AppState.rows.push(row);
+
+    // カテゴリ候補へ反映
+    if (row.category) {
+      var exists = false;
+      for (var i = 0; i < w.CategoryOptions.length; i++) {
+        if (w.CategoryOptions[i] === row.category) { exists = true; break; }
+      }
+      if (!exists) w.CategoryOptions.push(row.category);
+      w.Render.buildCategorySelect();
+    }
+
+    backupCSV();
+    clearSelection();
+    w.Render.refreshAll();
+  }
+
+  function updateRow() {
+    var id = w.AppState.selectedId;
+    if (!id) { alert("修正する行を選択してください"); return; }
+
+    var cur = findById(id);
+    if (!cur) { alert("選択行が見つかりません"); return; }
+
+    var row = readForm();
+    var err = validate(row);
+    if (err) { alert(err); return; }
+
+    cur.category = row.category;
+    cur.vendor = row.vendor;
+    cur.address = row.address;
+    cur.phone = row.phone;
+    cur.contact = row.contact;
+    cur.accounting = row.accounting;
+    cur.notes = row.notes;
+
+    // カテゴリ候補へ反映
+    if (row.category) {
+      var exists = false;
+      for (var i2 = 0; i2 < w.CategoryOptions.length; i2++) {
+        if (w.CategoryOptions[i2] === row.category) { exists = true; break; }
+      }
+      if (!exists) w.CategoryOptions.push(row.category);
+      w.Render.buildCategorySelect();
+      // 選択状態を保持
+      U.byId("f_category").value = row.category;
+    }
+
+    backupCSV();
+    w.Render.refreshAll();
+  }
+
+  function deleteRow() {
+    var id = w.AppState.selectedId;
+    if (!id) { alert("削除する行を選択してください"); return; }
+    if (!confirm("選択行を削除します。よろしいですか？")) return;
+
+    var rows = w.AppState.rows;
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].id !== id) out.push(rows[i]);
+    }
+    w.AppState.rows = out;
+
+    backupCSV();
+    clearSelection();
+    w.Render.refreshAll();
+  }
+
+  function addCategory() {
+    var v = U.trim(U.byId("f_newCategory").value);
+    if (!v) { alert("追加するカテゴリを入力してください"); return; }
+
+    for (var i = 0; i < w.CategoryOptions.length; i++) {
+      if (w.CategoryOptions[i] === v) {
+        alert("すでにあります");
+        U.byId("f_category").value = v;
+        return;
+      }
+    }
+    w.CategoryOptions.push(v);
+    w.Render.buildCategorySelect();
+    U.byId("f_category").value = v;
+    U.byId("f_newCategory").value = "";
+  }
+
+  w.CRUD = {
+    selectRow: selectRow,
+    clearSelection: clearSelection,
+    addRow: addRow,
+    updateRow: updateRow,
+    deleteRow: deleteRow,
+    addCategory: addCategory
+  };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+  function doPrint() { window.print(); }
+  w.Print = { doPrint: doPrint };
+})(window);
+
+
+
+/* 2025-12-09 JST */
+(function (w) {
+
+  function bindButtons() {
+    U.on(U.byId("searchBtn"), "click", function () { w.Search.doSearch(); });
+    U.on(U.byId("clearSearchBtn"), "click", function () { w.Search.clearSearch(); });
+
+    U.on(U.byId("searchInput"), "keydown", function (e) {
+      e = e || window.event;
+      var code = e.keyCode || e.which;
+      if (code === 13) w.Search.doSearch();
+    });
+
+    U.on(U.byId("printBtn"), "click", function () { w.Print.doPrint(); });
+
+    // ★表示中のみ書き出し
+    U.on(U.byId("exportBtn"), "click", function () { w.IO_Save.exportVisible(); });
+
+    U.on(U.byId("addBtn"), "click", function () { w.CRUD.addRow(); });
+    U.on(U.byId("updateBtn"), "click", function () { w.CRUD.updateRow(); });
+    U.on(U.byId("deleteBtn"), "click", function () { w.CRUD.deleteRow(); });
+    U.on(U.byId("clearBtn"), "click", function () { w.CRUD.clearSelection(); });
+
+    U.on(U.byId("addCategoryBtn"), "click", function () { w.CRUD.addCategory(); });
+  }
+
+  function initEmptyIfNeeded() {
+    if (!w.AppState.rows || w.AppState.rows.length === 0) {
+      w.AppState.rows = [];
+      w.Render.refreshAll();
+      w.Render.setDbInfo("データ未読込（下の「DB読込」から読み込めます）");
+    }
+  }
+
+  function init() {
+    // カテゴリselect構築
+    w.Render.buildCategorySelect();
+
+    bindButtons();
+    w.IO_Load.bindManualLoad();
+    w.IO_Load.autoLoadIfPossible();
+    initEmptyIfNeeded();
+
+    // 初期固定表示
+    w.Render.refreshAll();
+  }
+
+  if (document.readyState === "complete") init();
+  else U.on(window, "load", init);
+
+})(window);
+
+
+
+
+
+
