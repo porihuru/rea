@@ -10,23 +10,46 @@
 //     ・最終ページ集計（課税対象額 / 消費税 / 合計）
 //     を抽出して返すだけに特化
 //
-// ●数量・単価・金額 抽出方針（今回の修正版）
-//   1) 各品目ブロック内で「数値トークンが2個以上ある行」をすべて候補にする
-//   2) そのうち「一番下（最後）の行」を「合計数量＋契約単価」の行とみなす
-//        → その行の「後ろから2番目＝合計数量」「一番後ろ＝契約単価」
-//   3) その行より下で「数値を含む最初の行」の数値を「金額」とみなす
-//        例: 0.10 19,500.00  ← 最後の組（合計数量・単価）
-//            1,950.00        ← 次の行の数値が金額
-//   4) このパターンが取れなかった場合だけ、従来の「最大値＝金額＋ペア探索」ロジックでフォールバック
-//
-//   ※ユーザー指定のルール：
-//     「数字がスペースを挟み並んでいる最後の組が合計数量・契約単価、その次の行が金額」
-//     を、そのままコード化しています。
+// ●追加仕様
+//   - rows の金額合計（amount の合計）を計算し、summary に
+//       summary.calcBase      … 数値（合計）
+//       summary.calcBaseStr   … "999,999.99" 形式の文字列
+//       summary.baseCheckMark … 課税対象額と一致すれば "<"、一致しなければ ""
+//     を付加する。
+//   - 金額・数量・単価は原本の数字を「そのまま」抽出する方針。
+//     ・数量＋単価＋金額の決定は、以下の「最後の組」ルールを最優先で用いる。
+//       ① 品目ブロック内で「数字が2つ以上並んでいる行（例: 12.00 300.00）」を探す
+//       ② その中で一番下の行を「最後の組」とみなし、
+//          その行の「最後の2つの数値」を [合計数量, 契約単価] とする
+//       ③ その直後の行の数値を「金額」とする
+//          （例: 12.00 300.00 の次の行 3,600.00）
+//       ④ ③が見つからない場合は、合計数量×契約単価で金額を算出する
+//     ・上記ルールが使えないブロックのみ、旧来の推定ロジックでフォールバックする。
 //
 // ●品名＆単位抽出方針
-//   - 000x から始まる行を品目開始として、単位（PC/BG/KG/EA/CA/CN/SH）が出るまでを品名として抽出
-//   - 2行以上に分かれている品名も結合して1つの品名とする
-//   - 納地＋業者名の合体文字列は vendor としてそのまま保持する（後でユーザが修正）
+//   1) コード行（000x を含む行）の「コード以降」を tail として見る
+//      - tail から (PC|BG|KG|EA|CA|CN|SH) を探し、あればそれを単位とする
+//      - 単位の手前まで全部を品名とする（先頭が数字でもOK：1L〜 等）
+//   2) tail に単位が無い場合は、その tail 全体を品名候補として保持
+//   3) 2行目以降
+//      - 単位がまだ決まっていない＆行内に単位があれば
+//        ・単位の手前の文字列を品名に追加
+//        ・単位を確定
+//      - 単位が既に決まっていて、その行が数字を含まないなら品名の続きとして追加
+//      - それ以外（数字を含むが単位が無いなど）は品名領域の終わりとみなす
+//
+// ●数量・単価・金額抽出方針（最優先ルール）
+//   - 品目ブロック内で、コード000xを除いた数値を行ごとに調べ：
+//     ・「数値が2つ以上並んでいる行」をすべて候補とし、
+//       その中で一番下の行（最後に現れた行）を「最後の組」行とみなす
+//     ・その行の「最後の2つの数値」を [合計数量, 契約単価] として採用
+//     ・その直後の行で最初に現れる数値を「金額」として採用
+//   - もし上記でうまく取れない場合のみ、旧ロジック（最大値＝金額候補など）でフォールバック
+//
+//   ★ページヘッダー行（「納　地：」「納入台帳」など）は
+//     ブロック境界として扱い、数量・単価・金額の候補に入らないようにする。
+//   ★最終ページの「-　以　下　余　白　-」より下の集計値
+//     （課税対象額・消費税・合計）は、明細ブロックとは完全に分離する。
 
 // -------------------- ユーティリティ --------------------
 
@@ -79,6 +102,7 @@ function normalizeTotal(val) {
 }
 
 // 品名と単位の分離（末尾単位くっつき用）
+// 例: "冷凍マンゴーチャンクBG" → name="冷凍マンゴーチャンク", unit="BG"
 function splitNameAndUnit(fullName) {
   var trimmed = (fullName || '').replace(/\s+$/g, '');
   if (!trimmed) {
@@ -105,7 +129,7 @@ function parseDetailsFromText(text) {
 
   var rows = [];
   var n = lines.length;
-  var i, k, kk, p;
+  var i, k, kk;
   var currentVendor = '';
 
   // コード検出用（0001, 0002, ...）
@@ -117,7 +141,7 @@ function parseDetailsFromText(text) {
     var line = lines[i];
     var trimmed = line ? line.replace(/^\s+|\s+$/g, '') : '';
 
-    // 令和○年○月 → 次行が「納地＋業者名」の行
+    // 令和○年○月 → 次行が「納地＋業者名」の行（例：滝川駐屯地株式会社○○）
     if (trimmed.indexOf('令和') !== -1 &&
         trimmed.indexOf('年') !== -1 &&
         trimmed.indexOf('月') !== -1) {
@@ -127,7 +151,7 @@ function parseDetailsFromText(text) {
         if (!vn) continue;
         var vnTrim = vn.replace(/^\s+|\s+$/g, '');
         if (vnTrim) {
-          // 納地＋業者名の合体文字列をそのまま vendor として保持
+          // 納地＋業者名の合体文字列をそのまま保持（ユーザが後で修正）
           currentVendor = vnTrim;
           break;
         }
@@ -149,6 +173,10 @@ function parseDetailsFromText(text) {
     var code = m[0];
 
     // この品目ブロックの終了位置を探す
+    //   - 次の "000x" 行
+    //   - ページヘッダー行（「納　地：」「納入台帳」など）
+    //   - 「課税対象額」行
+    //   - 最終ページの「-　以　下　余　白　-」行（この行まではブロックに含める）
     var blockEnd = n;
     for (k = i + 1; k < n; k++) {
       var l2 = lines[k];
@@ -164,7 +192,6 @@ function parseDetailsFromText(text) {
         break;
       }
 
-      // ページヘッダー行
       if (t2.indexOf('納　地') !== -1 && t2.indexOf('業 者 名') !== -1) {
         blockEnd = k;
         break;
@@ -185,92 +212,105 @@ function parseDetailsFromText(text) {
       }
     }
 
-    // ブロック内の各行の数値トークンを事前に取得
-    var numsByLine = {};
+    // -------------------- ブロック内の数値トークン収集（フォールバック用） --------------------
+    var tokensBlock = [];
+    var globalIndex = 0;
     for (kk = i; kk < blockEnd; kk++) {
-      var lTmp = lines[kk];
-      numsByLine[kk] = lTmp ? findNumberTokens(lTmp) : [];
+      var lNum = lines[kk];
+      if (!lNum) continue;
+      var tks = findNumberTokens(lNum);
+      var ti;
+      for (ti = 0; ti < tks.length; ti++) {
+        var txt = tks[ti].text;
+        var val = parseNumberSimple(txt);
+        if (isNaN(val)) continue;
+        var token = {
+          text: txt,
+          value: val,
+          isCode: (txt === code),
+          globalIndex: globalIndex++
+        };
+        tokensBlock.push(token);
+      }
     }
 
+    // -------------------- 数量・単価・金額：最優先ルール（最後の組＋次行＝金額） --------------------
     var qtyText    = '';
     var priceText  = '';
     var amountText = '';
+    var pairFound  = false;
 
-    // -------------- 新ルール：最後の「数量＋単価」行と、その直後の金額行 --------------
+    // ブロック内の「数値が2つ以上ある行」のうち、最後の行を探す
+    var lastPairLineIdx = -1;
+    var lastPairLineTokens = null;
 
-    // 「数値トークンが2個以上ある行」のうち、最後の行を探す
-    var lastPairLine = -1;
-    for (p = i; p < blockEnd; p++) {
-      var tksP = numsByLine[p];
-      if (!tksP || tksP.length < 2) continue;
-      // 「000x コード行」が2個以上になるケースは想定しないが、一応除外しておく
-      var skipCodeLine = false;
-      for (kk = 0; kk < tksP.length; kk++) {
-        if (tksP[kk].text === code) {
-          skipCodeLine = true;
+    var lineIdx;
+    for (lineIdx = i; lineIdx < blockEnd; lineIdx++) {
+      var lP = lines[lineIdx];
+      if (!lP) continue;
+      var tokensP = findNumberTokens(lP);
+      if (!tokensP.length) continue;
+
+      // コードは除外
+      var nonCodeP = [];
+      var pj;
+      for (pj = 0; pj < tokensP.length; pj++) {
+        if (tokensP[pj].text === code) continue;
+        nonCodeP.push(tokensP[pj]);
+      }
+      if (nonCodeP.length >= 2) {
+        // 「数値が2つ以上ある行」の候補
+        lastPairLineIdx = lineIdx;
+        lastPairLineTokens = nonCodeP;
+      }
+    }
+
+    if (lastPairLineIdx !== -1 && lastPairLineTokens && lastPairLineTokens.length >= 2) {
+      // 最後の組 → 最後の2つの数値を [合計数量, 契約単価] とする
+      var lenPair = lastPairLineTokens.length;
+      var qtyTok = lastPairLineTokens[lenPair - 2];
+      var priceTok = lastPairLineTokens[lenPair - 1];
+
+      qtyText   = qtyTok.text;
+      priceText = priceTok.text;
+
+      // 次の行で最初に現れる非コード数値を「金額」として採用
+      var aLineIdx;
+      for (aLineIdx = lastPairLineIdx + 1; aLineIdx < blockEnd; aLineIdx++) {
+        var lA = lines[aLineIdx];
+        if (!lA) continue;
+        var tokensA = findNumberTokens(lA);
+        if (!tokensA.length) continue;
+
+        var nonCodeA = [];
+        var ak;
+        for (ak = 0; ak < tokensA.length; ak++) {
+          if (tokensA[ak].text === code) continue;
+          nonCodeA.push(tokensA[ak]);
+        }
+        if (nonCodeA.length) {
+          // 通常は1つだけ（例: 3,600.00 / 1,950.00 / 9,180.00 など）
+          var amtTok = nonCodeA[nonCodeA.length - 1];
+          amountText = amtTok.text;
           break;
         }
       }
-      if (skipCodeLine) continue;
 
-      lastPairLine = p; // 毎回更新 → 最後の行が残る
-    }
-
-    if (lastPairLine !== -1) {
-      var tokensPair = numsByLine[lastPairLine];
-      var lenPair = tokensPair.length;
-      if (lenPair >= 2) {
-        // 後ろから2番目＝合計数量、一番後ろ＝契約単価
-        var qTok = tokensPair[lenPair - 2];
-        var priceTok = tokensPair[lenPair - 1];
-        var qVal = parseNumberSimple(qTok.text);
-        var pVal = parseNumberSimple(priceTok.text);
-        if (!isNaN(qVal) && !isNaN(pVal)) {
-          qtyText   = qTok.text;
-          priceText = priceTok.text;
-
-          // 次の「数値を含む行」の数値を金額とみなす
-          var amountLine = -1;
-          for (kk = lastPairLine + 1; kk < blockEnd; kk++) {
-            var tksAmt = numsByLine[kk];
-            if (tksAmt && tksAmt.length > 0) {
-              amountLine = kk;
-              break;
-            }
-          }
-          if (amountLine !== -1) {
-            var tokensAmt = numsByLine[amountLine];
-            amountText = tokensAmt[tokensAmt.length - 1].text;
-          } else {
-            // 金額行が無い場合は、数量×単価で計算して補う
-            amountText = formatAmount(qVal * pVal);
-          }
-        }
-      }
-    }
-
-    // -------------- フォールバック：旧ロジック（最大値＝金額＋ペア探索） --------------
-    if (!qtyText && !priceText && !amountText) {
-      // ブロック内の数値トークン（コード000xも含む）を収集
-      var tokensBlock = [];
-      var globalIndex = 0;
-      for (kk = i; kk < blockEnd; kk++) {
-        var lNum = lines[kk];
-        if (!lNum) continue;
-        var tks = numsByLine[kk] || findNumberTokens(lNum);
-        for (var ti2 = 0; ti2 < tks.length; ti2++) {
-          var txt2 = tks[ti2].text;
-          var val2 = parseNumberSimple(txt2);
-          if (isNaN(val2)) continue;
-          tokensBlock.push({
-            text: txt2,
-            value: val2,
-            isCode: (txt2 === code),
-            globalIndex: globalIndex++
-          });
+      // 金額行が見つからない場合は、合計数量×単価で金額を算出
+      if (!amountText) {
+        var qvP = parseNumberSimple(qtyText);
+        var pvP = parseNumberSimple(priceText);
+        if (!isNaN(qvP) && !isNaN(pvP)) {
+          amountText = formatAmount(qvP * pvP);
         }
       }
 
+      pairFound = true;
+    }
+
+    // -------------------- フォールバック：最優先ルールが使えない場合のみ旧ロジック --------------------
+    if (!pairFound) {
+      // 非コード数値だけを抜き出し
       var nonCodeTokens = [];
       var t;
       for (t = 0; t < tokensBlock.length; t++) {
@@ -280,7 +320,8 @@ function parseDetailsFromText(text) {
       }
 
       if (nonCodeTokens.length >= 3) {
-        // 最大値を金額候補とみなす
+        // -------- 3つ以上ある場合：最大値を金額候補として
+        //         「数量×単価 ≒ 金額」を全探索 --------
         var amountToken = null;
         for (t = 0; t < nonCodeTokens.length; t++) {
           var tok = nonCodeTokens[t];
@@ -303,24 +344,25 @@ function parseDetailsFromText(text) {
         var bestDiff = Number.POSITIVE_INFINITY;
 
         if (amountToken && candidates.length >= 2) {
-          var qi, pj;
+          var qi, pj2;
           for (qi = 0; qi < candidates.length; qi++) {
-            for (pj = 0; pj < candidates.length; pj++) {
-              if (qi === pj) continue;
+            for (pj2 = 0; pj2 < candidates.length; pj2++) {
+              if (qi === pj2) continue;
               var qTok2 = candidates[qi];
-              var pTok2 = candidates[pj];
-              var qv2 = qTok2.value;
-              var pv2 = pTok2.value;
-              if (qv2 <= 0 || pv2 <= 0) continue;
+              var pTok2 = candidates[pj2];
+              var q2 = qTok2.value;
+              var p2 = pTok2.value;
+              if (q2 <= 0 || p2 <= 0) continue;
 
-              var prod2 = qv2 * pv2;
-              var diff2 = Math.abs(prod2 - amountToken.value);
+              var prod = q2 * p2;
+              var diff = Math.abs(prod - amountToken.value);
 
-              if (diff2 + 1e-6 < bestDiff) {
-                bestDiff = diff2;
+              if (diff + 1e-6 < bestDiff) {
+                bestDiff = diff;
                 bestQtyTok = qTok2;
                 bestPriceTok = pTok2;
-              } else if (Math.abs(diff2 - bestDiff) <= 0.5) {
+              } else if (Math.abs(diff - bestDiff) <= 0.5) {
+                // 誤差がほぼ同じなら「先に出てきたトークン」を優先
                 if (bestQtyTok === null ||
                     qTok2.globalIndex < bestQtyTok.globalIndex ||
                     (qTok2.globalIndex === bestQtyTok.globalIndex &&
@@ -340,58 +382,68 @@ function parseDetailsFromText(text) {
         if (bestQtyTok && bestPriceTok) {
           qtyText   = bestQtyTok.text;
           priceText = bestPriceTok.text;
-        } else if (nonCodeTokens.length >= 2) {
-          // さらにフォールバック：小さい順に2つを数量・単価とみなす
-          var arr = [];
-          for (t = 0; t < nonCodeTokens.length; t++) arr.push(nonCodeTokens[t]);
-          var swapped, tmp;
-          do {
-            swapped = false;
-            for (var s = 0; s < arr.length - 1; s++) {
-              if (arr[s].value > arr[s + 1].value) {
-                tmp = arr[s];
-                arr[s] = arr[s + 1];
-                arr[s + 1] = tmp;
-                swapped = true;
-              }
+        } else {
+          // 念のためのフォールバック：
+          // 非コード数値のうち「小さい順に2つ」を数量・単価とみなす
+          if (nonCodeTokens.length >= 2) {
+            var arr = [];
+            for (t = 0; t < nonCodeTokens.length; t++) {
+              arr.push(nonCodeTokens[t]);
             }
-          } while (swapped);
+            // バブルソート（古いブラウザ用）
+            var swapped, tmp;
+            do {
+              swapped = false;
+              for (var s = 0; s < arr.length - 1; s++) {
+                if (arr[s].value > arr[s + 1].value) {
+                  tmp = arr[s];
+                  arr[s] = arr[s + 1];
+                  arr[s + 1] = tmp;
+                  swapped = true;
+                }
+              }
+            } while (swapped);
 
-          var qTokF = arr[0];
-          var pTokF = arr[1];
-          qtyText   = qTokF.text;
-          priceText = pTokF.text;
+            var qTok3 = arr[0];
+            var pTok3 = arr[1];
+            qtyText   = qTok3.text;
+            priceText = pTok3.text;
 
-          var qv3 = qTokF.value;
-          var pv3 = pTokF.value;
-          if (!isNaN(qv3) && !isNaN(pv3)) {
-            amountText = formatAmount(qv3 * pv3);
+            var qv3 = qTok3.value;
+            var pv3 = pTok3.value;
+            if (!isNaN(qv3) && !isNaN(pv3)) {
+              amountText = formatAmount(qv3 * pv3);
+            }
           }
         }
 
       } else if (nonCodeTokens.length === 2) {
-        // 数値が2つだけ：小さい方＝数量、大きい方＝単価
+        // -------- 数値が2つだけ：金額列が無いとみなし
+        //         小さい方＝数量、大きい方＝単価、金額＝数量×単価 --------
         var tA = nonCodeTokens[0];
         var tB = nonCodeTokens[1];
-        var qTokF2, pTokF2;
+        var qTok4, pTok4;
         if (tA.value <= tB.value) {
-          qTokF2 = tA;
-          pTokF2 = tB;
+          qTok4 = tA;
+          pTok4 = tB;
         } else {
-          qTokF2 = tB;
-          pTokF2 = tA;
+          qTok4 = tB;
+          pTok4 = tA;
         }
-        qtyText   = qTokF2.text;
-        priceText = pTokF2.text;
-        var qv4 = qTokF2.value;
-        var pv4 = pTokF2.value;
+        qtyText   = qTok4.text;
+        priceText = pTok4.text;
+        var qv4 = qTok4.value;
+        var pv4 = pTok4.value;
         if (!isNaN(qv4) && !isNaN(pv4)) {
           amountText = formatAmount(qv4 * pv4);
         }
 
       } else if (nonCodeTokens.length === 1) {
-        // 数値が1つだけ：数量だけ分かる
+        // -------- 数値が1つだけ：数量だけ分かるとみなす --------
         qtyText = nonCodeTokens[0].text;
+
+      } else {
+        // 非コード数値が無い場合はそのまま（全て空）
       }
     }
 
@@ -406,6 +458,7 @@ function parseDetailsFromText(text) {
     if (tailTrim) {
       var umHead = unitRe.exec(tailTrim);
       if (umHead) {
+        // tail 内に単位がある → その手前まで全部が品名
         var unitIndex = umHead.index;
         var nameCandidate = tailTrim.substring(0, unitIndex);
         nameCandidate = nameCandidate.replace(/\s+$/g, '');
@@ -414,22 +467,23 @@ function parseDetailsFromText(text) {
         }
         unitFromName = umHead[1];
       } else {
+        // 単位は無いが、コード行に品名の一部がある
         nameParts.push(tailTrim);
       }
     }
 
     // 2行目以降：品名・単位の続き
-    for (p = i + 1; p < blockEnd; p++) {
+    for (var p = i + 1; p < blockEnd; p++) {
       var l3 = lines[p];
       if (!l3) continue;
       var t3 = l3.replace(/^\s+|\s+$/g, '');
       if (!t3) continue;
 
       var um2 = unitRe.exec(t3);
-      var tokens3 = numsByLine[p] || findNumberTokens(l3);
+      var tokens3 = findNumberTokens(l3);
 
       if (!tokens3.length && !um2) {
-        // 数字も単位も無い → 品名の続き
+        // 数字も単位も無い → 完全に品名の続きとみなす
         nameParts.push(t3);
         continue;
       }
@@ -440,16 +494,20 @@ function parseDetailsFromText(text) {
         var prefixUnit = t3.substring(0, unitIdx2);
         prefixUnit = prefixUnit.replace(/\s+$/g, '');
         if (prefixUnit) {
+          // 例: "（黄） PC 11.00" → "（黄）" を品名に追加
           nameParts.push(prefixUnit);
         }
         if (!unitFromName) {
           unitFromName = um2[1];
         }
+        // 単位以降は数量などなので、ここで品名処理は終了
         break;
       }
 
-      // 単位は無いが数字がある行 → 先頭部分だけ品名として追加
-      var firstIdx3 = tokens3[0].index;
+      // 単位は無いが数字がある行
+      // → 行頭の文字列だけを品名の続きにするか判断
+      var tokens3b = tokens3;
+      var firstIdx3 = tokens3b[0].index;
       if (firstIdx3 > 0) {
         var prefix3 = l3.substring(0, firstIdx3);
         prefix3 = prefix3.replace(/^\s+|\s+$/g, '');
@@ -457,6 +515,7 @@ function parseDetailsFromText(text) {
           nameParts.push(prefix3);
         }
       }
+      // 数字が現れた段階で、それ以降は品名ではないとみなして終了
       break;
     }
 
@@ -477,7 +536,7 @@ function parseDetailsFromText(text) {
       vendor: currentVendor,
       no:     code,
       name:   name,
-      spec:   '',
+      spec:   '',     // 規格はこのツールでは空（UI側で一括入力可）
       unit:   unit,
       qty:    qtyText,
       price:  priceText,
@@ -487,7 +546,8 @@ function parseDetailsFromText(text) {
 
     rows.push(row);
 
-    i = blockEnd - 1;  // このブロックはここまで処理済み
+    // すでに [i..blockEnd-1] を処理したので、次のループは blockEnd-1 の次から
+    i = blockEnd - 1;
   }
 
   return rows;
@@ -495,6 +555,7 @@ function parseDetailsFromText(text) {
 
 // -------------------- 最終ページ集計 --------------------
 
+// 最終ページ集計（原本値）の抽出
 function parseSummaryFromText(text) {
   var normalized = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   var lines = normalized.split('\n');
@@ -514,6 +575,7 @@ function parseSummaryFromText(text) {
   }
 
   if (startIdx === -1) {
+    // 見つからなければ、最後の10行くらいをざっくり見る
     startIdx = n - 10;
     if (startIdx < 0) startIdx = 0;
   }
@@ -524,6 +586,7 @@ function parseSummaryFromText(text) {
     if (!line) continue;
     var tokens = findNumberTokens(line);
     if (!tokens.length) continue;
+    // 各行の最後の数値を採用
     numbers.push(tokens[tokens.length - 1].text);
     if (numbers.length >= 3) break;
   }
@@ -532,6 +595,10 @@ function parseSummaryFromText(text) {
     return { base: '', tax: '', total: '' };
   }
 
+  // 想定順序：
+  //   1行目: 課税対象額
+  //   2行目: 合計（\1,047,148- など）
+  //   3行目: 消費税
   var baseVal  = numbers[0];
   var totalRaw = numbers[1];
   var taxVal   = numbers[2];
@@ -546,10 +613,16 @@ function parseSummaryFromText(text) {
 
 // -------------------- エクスポート関数 --------------------
 
+// 貼り付けテキスト全体 → { rows, summary } にまとめて返す
+// summary には以下を追加：
+//   summary.calcBase      … 金額合計（数値）
+//   summary.calcBaseStr   … 金額合計（"999,999.99"）
+//   summary.baseCheckMark … 課税対象額と一致すれば "<"、不一致なら ""
 function parseLedgerText(text) {
   var rows = parseDetailsFromText(text || '');
   var summary = parseSummaryFromText(text || '');
 
+  // 金額合計の計算
   var sum = 0;
   var i, v;
   for (i = 0; i < rows.length; i++) {
@@ -565,6 +638,7 @@ function parseLedgerText(text) {
   var baseNum = parseNumberSimple(summary.base);
   var mark = '';
   if (!isNaN(baseNum) && !isNaN(sum)) {
+    // 完全一致でなくても、浮動小数の誤差を考慮して ±0.5 以内なら一致とみなす
     if (Math.abs(baseNum - sum) < 0.5) {
       mark = '<';
     }
