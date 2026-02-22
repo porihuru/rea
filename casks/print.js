@@ -247,34 +247,35 @@
     html += "<style>";
     // 左余白 3cm = 30mm
     html += "@page { margin: 10mm 15mm 10mm 30mm; }";
-    html += "body { margin: 0; padding: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12px; }";
+    html += "body { margin: 0; padding: 0; font-family: 'Segoe UI', 'Noto Sans JP', system-ui, sans-serif; font-size: 12px; color: #333; line-height: 1.5; }"; 
     html += ".page { page-break-after: always; }";
     html += ".page:last-child { page-break-after: auto; }";
     html += ".page-inner { width: 100%; box-sizing: border-box; }";
 
-    html += ".invoice-header { position: relative; margin-bottom: 8px; }";
-    html += ".invoice-title { font-size: 20px; font-weight: bold; text-align: center; }";
-    html += ".page-no { position: absolute; right: 0; top: 0; font-size: 11px; }";
+    html += ".invoice-header { position: relative; margin-bottom: 12px; padding-bottom: 6px; }"; 
+    html += ".invoice-title { font-size: 24px; font-weight: 700; letter-spacing: 0.5px; text-align: center; }"; 
+    html += ".page-no { position: absolute; right: 0; top: 0; font-size: 11px; color: #777; }";
 
     html += ".date-line { text-align: right; margin: 4px 0 2px; }";
     html += ".message-line { margin: 2px 0 6px; }";
 
-    html += ".box { border: 1px solid #000; padding: 6px 8px; box-sizing: border-box; }";
-    html += ".box-label { font-size: 11px; margin-bottom: 2px; }";
-    html += ".box-body { white-space: pre-line; }";
+    html += ".box { border: 1.5px solid #333; padding: 8px 10px; box-sizing: border-box; background: #fff; }"; 
+    html += ".box-label { font-size: 14px; margin-bottom: 3px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.3px; }"; 
+    html += ".box-body { white-space: pre-line; }"; 
     html += ".box.atena .box-body { text-align: left; }";
 
-    html += ".flex-row { display: flex; gap: 8px; margin-bottom: 4px; }";
+    html += ".flex-row { display: flex; gap: 10px; margin-bottom: 6px; }"; 
     html += ".amount-box { width: 35%; }";
-    html += ".amount-box .box-body { text-align: right; font-size: 22px; font-weight: bold; }";
-    html += ".vendor-box { flex: 1; }";
-    html += ".vendor-box .box-body { text-align: right; }";
+    html += ".amount-box .box-body { text-align: right; font-size: 28px; font-weight: 700; color: #000; }";
+    html += ".vendor-box { flex: 1; }"; 
+    html += ".vendor-box .box-body { text-align: right; font-size: 14px; line-height: 1.6; }";
 
     html += ".section-title { margin-top: 8px; margin-bottom: 4px; font-weight: bold; }";
 
-    html += ".invoice-table { width: 100%; border-collapse: collapse; margin-top: 2px; }";
-    html += ".invoice-table th, .invoice-table td { border: 1px solid #000; padding: 2px 4px; vertical-align: top; }";
-    html += ".invoice-table th { background: #f0f0f0; text-align: center; }";
+    html += ".invoice-table { width: 100%; border-collapse: collapse; margin-top: 4px; border-top: 2px solid #333; border-bottom: 2px solid #333; border-left: 1px solid #333; border-right: 1px solid #333; }";
+    html += ".invoice-table th, .invoice-table td { border-right: 1px solid #ddd; padding: 4px 6px; vertical-align: top; }";
+    html += ".invoice-table th:last-child, .invoice-table td:last-child { border-right: none; }";
+    html += ".invoice-table th { background: #f8f8f8; text-align: center; font-weight: 600; font-size: 12px; border-bottom: 2px solid #333; }";
     html += ".col-no { width: 10mm; text-align: center; }";
     html += ".col-name { width: auto; }";
     html += ".col-unit { width: 10mm; text-align: center; }";
@@ -283,13 +284,13 @@
     html += ".col-amount { width: 24mm; text-align: right; }";
     html += ".col-note { width: 14mm; }";
 
-    html += ".item-name { font-weight: normal; }";
-    html += ".item-spec { font-size: 11px; color: #555; }";
+    html += ".item-name { font-weight: 500; }"; 
+    html += ".item-spec { font-size: 10px; color: #888; }"; 
+    html += ".invoice-table tbody tr { border-bottom: 1px solid #eee; }"; 
+    html += ".sum-row { background: #f8f8f8; }"; 
+    html += ".sum-row-label { text-align: right; font-weight: 600; font-size: 11px; }"; 
+    html += ".sum-row-amount { text-align: right; font-weight: 700; font-size: 13px; }";
 
-    html += ".sum-row-label { text-align: right; font-weight: bold; }";
-    html += ".sum-row-amount { text-align: right; font-weight: bold; }";
-
-    html += ".version { margin-top: 8px; font-size: 10px; text-align: right; color: #666; }";
     html += "</style>";
     html += "</head><body>";
 
@@ -423,7 +424,7 @@
         var needPageSubtotal =
           (totalRows > 15); // 仕様：15品目超の場合のみページ小計あり
         if (needPageSubtotal) {
-          html += "<tr>";
+          html += '<tr class="sum-row">';
           // No〜契約単価 までを結合
           html +=
             '<td class="sum-row-label" colspan="5">小計</td>';
@@ -439,7 +440,7 @@
         // 小計行と同じように表の中に 3 行追加（小計は印刷フッターから削除済み）
         if (isLastPage) {
           // 合計
-          html += "<tr>";
+          html += '<tr class="sum-row">';
           html +=
             '<td class="sum-row-label" colspan="5">合計</td>';
           html +=
@@ -450,7 +451,7 @@
           html += "</tr>";
 
           // 消費税額８％（.00付き）
-          html += "<tr>";
+          html += '<tr class="sum-row">';
           html +=
             '<td class="sum-row-label" colspan="5">消費税額８％</td>';
           html +=
@@ -461,7 +462,7 @@
           html += "</tr>";
 
           // 総合計（.00付き）
-          html += "<tr>";
+          html += '<tr class="sum-row">';
           html +=
             '<td class="sum-row-label" colspan="5">総合計</td>';
           html +=
@@ -475,12 +476,6 @@
         html += "</tbody></table>";
       } else {
         html += "<p>明細がありません。</p>";
-      }
-
-      // 最終ページのみ：バージョン表示
-      if (isLastPage && versionText) {
-        html +=
-          '<div class="version">' + escapeHtml(versionText) + "</div>";
       }
 
       html += "</div></div>"; // .page-inner, .page

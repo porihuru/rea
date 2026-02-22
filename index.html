@@ -147,7 +147,7 @@
 
   <div style="margin-top: 6px;">
     <!-- 規格一括入力テキスト＋ボタン＋全データコピー＋印刷 -->
-    <input id="bulkSpecText" type="text" placeholder="規格欄 一括入力">
+    <input id="bulkSpecText" type="text" value="規格表のとおり" onclick="this.select()">
     <button id="btnBulkSpec">規格欄一括入力</button>
 
     <!-- ★ここを追加★ -->
@@ -831,7 +831,7 @@ function copyTextToClipboard(text, label) {
   document.getElementById('headerBox').innerHTML = 'ここに納地・業者名ヘッダーが表示されます。';
   document.getElementById('sumBox').innerHTML   = '';
   document.getElementById('copyMsg').innerHTML  = '';
-  bulkSpecText.value = '';
+  bulkSpecText.value = '規格表のとおり'; // 初期値に戻す
 
   // ★ここでは日付・宛先・業者名はクリアしない
   // dateInput.value = '';
@@ -947,6 +947,16 @@ function copyTextToClipboard(text, label) {
   }
   // ★ここまで追加★
 
+  // 日付欄に「当日から3日後」を初期設定
+  if (billDate) {
+    var today = new Date();
+    var threeDaysLater = new Date(today);
+    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+    var yyyy = threeDaysLater.getFullYear();
+    var mm = String(threeDaysLater.getMonth() + 1).padStart(2, '0');
+    var dd = String(threeDaysLater.getDate()).padStart(2, '0');
+    billDate.value = yyyy + '-' + mm + '-' + dd;
+  }
 
 
 })();
