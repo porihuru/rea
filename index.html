@@ -349,7 +349,7 @@ function rebuildDetailsText() {
 // -------------------- サマリ表示＆再計算 --------------------
 
 // サマリ表示の共通処理
-function displaySummary(summary) {
+function displaySummary(summary, isRecalc) {
   var sumBox = document.getElementById('sumBox');
   if (!summary || !(summary.base || summary.tax || summary.total || summary.calcBaseStr)) {
     sumBox.textContent = '';
@@ -359,25 +359,48 @@ function displaySummary(summary) {
 
   var sText = '';
 
-  // ① 金額の合計行
+  // ① 金額の合計行（毎回最新の計算値を表示）
   if (summary.calcBaseStr) {
     sText += '金額の合計:' + summary.calcBaseStr;
-    if (summary.baseCheckMark) {
-      sText += summary.baseCheckMark; // 一致していれば "<"
+    // 「表修正時の再計算」の場合、金額合計と課税対象額が一致していれば "<" を表示
+    if (isRecalc && originalSummary && originalSummary.base) {
+      var calcNum = parseNumberForCalc(summary.calcBaseStr);
+      var origNum = parseNumberForCalc(originalSummary.base);
+      if (!isNaN(calcNum) && !isNaN(origNum) && Math.abs(calcNum - origNum) < 0.5) {
+        sText += '<';
+      }
+    } else if (summary.baseCheckMark) {
+      // 「初回解析」の場合、パーサ判定の "<" を使用
+      sText += summary.baseCheckMark;
     }
     sText += '\n';
   }
 
-  // ② [最終ページ集計] ブロック
-  sText += '[最終ページ集計]\n';
-  if (summary.base) {
-    sText += '課税対象額: ' + summary.base + '\n';
-  }
-  if (summary.tax) {
-    sText += '消費税: ' + summary.tax + '\n';
-  }
-  if (summary.total) {
-    sText += '合計: ' + summary.total + '\n';
+  // ② [最終ページ集計] ブロック（originalSummary があれば常に原本値を保持）
+  if (originalSummary && (originalSummary.base || originalSummary.tax || originalSummary.total)) {
+    // originalSummary の値を使用（初回解析時・表修正後も変不変更）
+    sText += '[最終ページ集計]\n';
+    if (originalSummary.base) {
+      sText += '課税対象額: ' + originalSummary.base + '\n';
+    }
+    if (originalSummary.tax) {
+      sText += '消費税: ' + originalSummary.tax + '\n';
+    }
+    if (originalSummary.total) {
+      sText += '合計: ' + originalSummary.total + '\n';
+    }
+  } else {
+    // originalSummary がない場合（初回解析で summary を使用）
+    sText += '[最終ページ集計]\n';
+    if (summary.base) {
+      sText += '課税対象額: ' + summary.base + '\n';
+    }
+    if (summary.tax) {
+      sText += '消費税: ' + summary.tax + '\n';
+    }
+    if (summary.total) {
+      sText += '合計: ' + summary.total + '\n';
+    }
   }
 
   sumBox.textContent = sText;
@@ -387,7 +410,7 @@ function displaySummary(summary) {
 // 金額合計から課税対象額・消費税・合計を再計算（再計算版）
 function recalcTotalsFromRows() {
   if (!currentRows || !currentRows.length) {
-    displaySummary({ base: '', tax: '', total: '', calcBaseStr: '' });
+    displaySummary({ base: '', tax: '', total: '', calcBaseStr: '' }, true);
     return;
   }
   var sum = 0;
@@ -407,9 +430,9 @@ function recalcTotalsFromRows() {
     tax:   formatInt(taxNum),
     total: formatInt(totalNum),
     calcBaseStr: formatAmount(baseNum),
-    baseCheckMark: '' // 再計算時は "<" 判定は行わない（原本比較ではないため）
+    baseCheckMark: '' // 再計算時は "<" 判定は行わない（表示は displaySummary で行う）
   };
-  displaySummary(summaryNew);
+  displaySummary(summaryNew, true); // true: 表修正時の再計算フラグ
 }
 
 // 1行の数量・単価変更に伴う金額＆サマリ再計算
@@ -708,7 +731,7 @@ function renderTable(rows, summary) {
   summaryDiv.innerHTML = '抽出明細件数: ' + rows.length + ' 件';
 
   // サマリ（初期表示は原本値＋金額合計）
-  displaySummary(originalSummary);
+  displaySummary(originalSummary, false); // false: 初回解析
 
   // 明細TSV再構築（備考列込み）
   rebuildDetailsText();
