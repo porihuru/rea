@@ -115,6 +115,13 @@ function splitNameAndUnit(fullName) {
   return { name: trimmed, unit: '' };
 }
 
+// 行が「数量・単価のような数値のみ」で構成されているか
+function isNumericOnlyLine(line) {
+  var t = (line || '').replace(/^\s+|\s+$/g, '');
+  if (!t) return false;
+  return /^[0-9０-９,\.\-¥\\\s]+$/.test(t);
+}
+
 // -------------------- 明細パーサ --------------------
 
 // 明細パーサ：貼り付けテキスト → 明細配列
@@ -206,6 +213,12 @@ function parseDetailsFromText(text) {
         blockEnd = k; // この行の手前までが品目ブロック
         break;
       }
+
+      // 備考マーク「*」だけの行（品目の終わり）
+      if (t2 === '*') {
+        blockEnd = k;
+        break;
+      }
     }
     // blockEnd が n のままなら、最後までがブロック
 
@@ -247,41 +260,76 @@ function parseDetailsFromText(text) {
       });
     }
 
-    // 1) 「数値が2つ以上並んでいる行」のうち一番下の行を finalGroup とする
-    var finalGroup = null;
+    // 1) 金額候補を特定
+    //    優先順位: ①単一数値行（最大のもの）で直前に2値ペアがあればそれを、②全体の最大値行
+    var amountLine = null;
+    var singleNumLine = null;
+    var singleMaxVal = 0;
+    var maxVal = 0;
+    var maxValLine = null;
+    
     for (kk = 0; kk < numericLines.length; kk++) {
       var nl = numericLines[kk];
-      if (nl.tokens.length >= 2) {
-        if (!finalGroup || nl.lineIndex > finalGroup.lineIndex) {
-          finalGroup = nl;
+      var lastVal = nl.values[nl.values.length - 1];
+      
+      // 1つの数値のみの行を記録（最大値のものを優先）
+      if (nl.tokens.length === 1) {
+        if (lastVal >= singleMaxVal) {
+          singleMaxVal = lastVal;
+          singleNumLine = nl;
+        }
+      }
+      
+      // 最大値の行を記録（同値なら後ろを優先）
+      if (lastVal >= maxVal) {
+        maxVal = lastVal;
+        maxValLine = nl;
+      }
+    }
+    
+    // 単一数値行の直前に2値ペアがあるかチェック
+    var hasPairBeforeSingle = false;
+    if (singleNumLine) {
+      for (kk = numericLines.length - 1; kk >= 0; kk--) {
+        var nl3 = numericLines[kk];
+        if (nl3.lineIndex < singleNumLine.lineIndex && nl3.tokens.length >= 2) {
+          hasPairBeforeSingle = true;
+          break;
         }
       }
     }
+    
+    // 単一数値行が存在し、直前に2値ペアがあれば優先、そうでなければ最大値行
+    if (singleNumLine && hasPairBeforeSingle && singleMaxVal >= maxVal * 0.1) {
+      amountLine = singleNumLine;
+    } else {
+      amountLine = maxValLine;
+    }
 
-    if (finalGroup) {
-      // 最後の2つを [合計数量, 契約単価] とみなす
-      var lenTok = finalGroup.tokens.length;
-      qtyText   = finalGroup.tokens[lenTok - 2];
-      priceText = finalGroup.tokens[lenTok - 1];
+    if (amountLine) {
+      // 金額行が見つかった → その行の最後の数値を金額とする
+      amountText = amountLine.tokens[amountLine.tokens.length - 1];
 
-      // finalGroup より下の最初の数値行の最後の数値を金額とする
-      var foundAmount = false;
-      for (kk = 0; kk < numericLines.length; kk++) {
-        var nl2 = numericLines[kk];
-        if (nl2.lineIndex > finalGroup.lineIndex) {
-          amountText = nl2.tokens[nl2.tokens.length - 1];
-          foundAmount = true;
+      // 2) 金額行の直前で「2つ以上の数値を持つ行」を探し、最後の2つを数量・単価とする
+      var qtyPriceLine = null;
+      for (kk = numericLines.length - 1; kk >= 0; kk--) {
+        var nl3 = numericLines[kk];
+        if (nl3.lineIndex < amountLine.lineIndex && nl3.tokens.length >= 2) {
+          qtyPriceLine = nl3;
           break;
         }
       }
 
-      // もし下に金額らしき行が無ければ、数量×単価で金額を計算して埋める
-      if (!foundAmount) {
-        var qv = parseNumberSimple(qtyText);
-        var pv = parseNumberSimple(priceText);
-        if (!isNaN(qv) && !isNaN(pv)) {
-          amountText = formatAmount(qv * pv);
-        }
+      if (qtyPriceLine) {
+        var lenTok2 = qtyPriceLine.tokens.length;
+        qtyText   = qtyPriceLine.tokens[lenTok2 - 2];
+        priceText = qtyPriceLine.tokens[lenTok2 - 1];
+      } else if (amountLine.tokens.length >= 3) {
+        // 金額行自体に3つ以上数値がある場合、最後が金額、その前2つが数量・単価
+        var lenTok3 = amountLine.tokens.length;
+        qtyText   = amountLine.tokens[lenTok3 - 3];
+        priceText = amountLine.tokens[lenTok3 - 2];
+        amountText = amountLine.tokens[lenTok3 - 1];
       }
     } else {
       // 2) finalGroup が無いときだけ、旧ロジック（最大値を金額候補とし、q×p≒金額）でフォールバック
@@ -448,6 +496,13 @@ function parseDetailsFromText(text) {
       }
 
       // 単位は無いが数字がある行
+      // 文字混在（例: あじフライ600g(1 / 0ヶ)）は品名継続として扱う。
+      // 数値のみ行（例: 21.00 590.00）だけ品名終了とみなす。
+      if (!isNumericOnlyLine(t3)) {
+        nameParts.push(t3);
+        continue;
+      }
+
       var firstIdx3 = tokens3[0].index;
       if (firstIdx3 > 0) {
         var prefix3 = l3.substring(0, firstIdx3);
@@ -456,7 +511,7 @@ function parseDetailsFromText(text) {
           nameParts.push(prefix3);
         }
       }
-      // 数字が現れた段階で、それ以降は品名ではないとみなして終了
+      // 数値のみ行が現れた段階で、それ以降は品名ではないとみなして終了
       break;
     }
 
