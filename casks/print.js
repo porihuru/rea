@@ -234,7 +234,7 @@
     if (data.totalAmount) {
       var totalIntStr = formatInt(data.totalAmount || 0);
       if (totalIntStr) {
-        invoiceLine = "￥" + totalIntStr + "ー";
+        invoiceLine = "￥" + totalIntStr + "-";
       }
     }
 
@@ -260,16 +260,16 @@
     html += ".message-line { margin: 2px 0 6px; }";
 
     html += ".box { border: 1.5px solid #333; padding: 8px 10px; box-sizing: border-box; background: #fff; }"; 
-    html += ".box-label { font-size: 14px; margin-bottom: 3px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.3px; }"; 
-    html += ".box-body { white-space: pre-line; }"; 
-    html += ".box.atena .box-body { text-align: left; }";
-
+    html += ".box-label { font-size: 14px; margin-bottom: 2px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.3px; }"; 
+    html += ".box-body { white-space: pre-line; overflow-wrap: break-word; word-break: break-all; }";
+    html += ".box.atena { padding: 1px 2px; }";
+    html += ".box.atena .box-label { font-size: 12px; margin: 0 0 1px 0; }";
+    html += ".box.atena .box-body { font-size: 13px; line-height: 1.3; }";
     html += ".flex-row { display: flex; gap: 10px; margin-bottom: 6px; }"; 
     html += ".amount-box { width: 35%; }";
     html += ".amount-box .box-body { text-align: right; font-size: 28px; font-weight: 700; color: #000; }";
-    html += ".vendor-box { flex: 1; }"; 
-    html += ".vendor-box .box-body { text-align: right; font-size: 14px; line-height: 1.6; }";
-
+    html += ".vendor-box { flex: 1; padding: 1px 2px; word-break: break-word; }";
+    html += ".vendor-box .box-body { text-align: right; font-size: 13px; line-height: 1.3; }";
     html += ".section-title { margin-top: 8px; margin-bottom: 4px; font-weight: bold; }";
 
     html += ".invoice-table { width: 100%; border-collapse: collapse; margin-top: 4px; border-top: 2px solid #333; border-bottom: 2px solid #333; border-left: 1px solid #333; border-right: 1px solid #333; }";
