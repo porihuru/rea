@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>納入台帳 貼り付けテキスト解析ツール v2026.02.22-01</title>
+  <title>納入台帳 貼り付けテキスト解析ツール v2026.03.06-01</title>
   <style>
     body {
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -104,7 +104,7 @@
 <body>
   <!-- 右上のバージョン情報 -->
   <div class="version-label" id="versionLabel">
-    v2026.02.22-01
+    v2026.03.06-01
   </div>
 
   <h1>納入台帳 貼り付けテキスト解析ツール</h1>
@@ -118,6 +118,8 @@
 
   <div style="margin-top: 6px;">
     <button id="btnClear">クリア</button>
+    <button id="btnSaveLocal">データ保存</button>
+    <button id="btnOpenLocal">データを開く</button>
   </div>
 
   <!-- 納地・業者名などのヘッダー情報表示 -->
@@ -179,9 +181,9 @@
   <script src="casks/print.js"></script>
 
 <script>
-// 納入台帳テキスト解析 メイン側 v2026.02.22-01
+// 納入台帳テキスト解析 メイン側 v2026.03.06-01
 
-var VERSION_TEXT = '納入台帳テキスト解析 v2026.02.22-01';
+var VERSION_TEXT = '納入台帳テキスト解析 v2026.03.06-01';
 var TAX_RATE = 0.08; // 消費税率（8%）
 
 // コピー用保持
@@ -780,6 +782,8 @@ function copyTextToClipboard(text, label) {
 (function() {
   var ta           = document.getElementById('src');
   var btnClear     = document.getElementById('btnClear');
+  var btnSaveLocal = document.getElementById('btnSaveLocal');
+  var btnOpenLocal = document.getElementById('btnOpenLocal');
   var btnCopyAll   = document.getElementById('btnCopyAll');
 
   // ★これを追加★
@@ -797,6 +801,175 @@ function copyTextToClipboard(text, label) {
   var toText       = document.getElementById('toText');
   var vendorText   = document.getElementById('vendorText');
   var billDate     = document.getElementById('billDate');
+  var LOCAL_DATA_FILE_NAME = 'data.json';
+
+  function setStatusMessage(msg) {
+    var msgSpan = document.getElementById('copyMsg');
+    if (msgSpan) {
+      msgSpan.innerHTML = msg || '';
+    }
+  }
+
+  function isFileProtocolPage() {
+    return window.location && window.location.protocol === 'file:';
+  }
+
+  function saveDataByDownload(jsonText) {
+    var fileName = buildSaveFileName();
+    var blob = new Blob([jsonText], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function sanitizeFileNamePart(text) {
+    var s = String(text || '');
+    s = s.replace(/[\\/:*?"<>|]/g, '');
+    s = s.replace(/[\r\n\t]/g, ' ');
+    s = s.replace(/^\s+|\s+$/g, '');
+    s = s.replace(/\s+/g, ' ');
+    return s;
+  }
+
+  function formatDateForFileName() {
+    var d = (billDate && billDate.value) ? billDate.value : '';
+    if (!d) {
+      var now = new Date();
+      var y = String(now.getFullYear());
+      var m = String(now.getMonth() + 1).padStart(2, '0');
+      var day = String(now.getDate()).padStart(2, '0');
+      return y + m + day;
+    }
+    return String(d).replace(/-/g, '');
+  }
+
+  function getVendorNameForFileName() {
+    var v = vendorText && vendorText.value ? String(vendorText.value) : '';
+    var lines = v.split(/\r?\n/);
+    var firstLine = lines.length ? lines[0] : '';
+    firstLine = sanitizeFileNamePart(firstLine);
+    if (firstLine) return firstLine;
+    if (currentRows && currentRows.length && currentRows[0].vendor) {
+      return sanitizeFileNamePart(currentRows[0].vendor);
+    }
+    return '業者名未設定';
+  }
+
+  function getItemNameForFileName() {
+    if (currentRows && currentRows.length && currentRows[0].name) {
+      var item = sanitizeFileNamePart(currentRows[0].name);
+      if (item) return item;
+    }
+    return '品名未設定';
+  }
+
+  function getCountLabelForFileName() {
+    var count = currentRows && currentRows.length ? currentRows.length : 0;
+    if (count <= 0) return '0件';
+    if (count === 1) return '1件';
+    return 'ほか' + String(count - 1) + '件';
+  }
+
+  function buildSaveFileName() {
+    var datePart = formatDateForFileName();
+    var vendorPart = getVendorNameForFileName();
+    var itemPart = getItemNameForFileName();
+    var countPart = getCountLabelForFileName();
+    return datePart + '_' + vendorPart + '_' + itemPart + '_' + countPart + '.json';
+  }
+
+  function openDataByFileInput() {
+    return new Promise(function(resolve, reject) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.onchange = function() {
+        var file = input.files && input.files[0] ? input.files[0] : null;
+        if (!file) {
+          reject({ name: 'AbortError' });
+          return;
+        }
+        var reader = new FileReader();
+        reader.onload = function() {
+          try {
+            var data = JSON.parse(String(reader.result || ''));
+            resolve(data);
+          } catch (e) {
+            reject({ name: 'SyntaxError' });
+          }
+        };
+        reader.onerror = function() {
+          reject({ name: 'ReadError' });
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    });
+  }
+
+  function createLocalSaveData() {
+    var rowsCopy = [];
+    var i;
+    for (i = 0; i < currentRows.length; i++) {
+      rowsCopy.push({
+        vendor: currentRows[i].vendor || '',
+        no: currentRows[i].no || '',
+        name: currentRows[i].name || '',
+        spec: currentRows[i].spec || '',
+        unit: currentRows[i].unit || '',
+        qty: currentRows[i].qty || '',
+        price: currentRows[i].price || '',
+        amount: currentRows[i].amount || '',
+        note: currentRows[i].note || ''
+      });
+    }
+    return {
+      format: 'ledger-local-save-v1',
+      savedAt: new Date().toISOString(),
+      appVersion: VERSION_TEXT,
+      srcText: ta.value || '',
+      bulkSpecText: bulkSpecText.value || '',
+      toText: toText.value || '',
+      vendorText: vendorText.value || '',
+      billDate: billDate.value || '',
+      rows: rowsCopy,
+      summary: originalSummary || { base:'', tax:'', total:'', calcBaseStr:'', baseCheckMark:'' }
+    };
+  }
+
+  function applyLocalSaveData(data) {
+    ta.value = data && data.srcText ? data.srcText : '';
+    bulkSpecText.value = data && data.bulkSpecText ? data.bulkSpecText : '規格表のとおり';
+    toText.value = data && data.toText ? data.toText : '';
+    vendorText.value = data && data.vendorText ? data.vendorText : '';
+    billDate.value = data && data.billDate ? data.billDate : '';
+
+    if (data && data.rows && data.rows.length) {
+      renderTable(data.rows, data.summary || { base:'',tax:'',total:'',calcBaseStr:'',baseCheckMark:'' });
+      return;
+    }
+
+    if (ta.value) {
+      doParse();
+      return;
+    }
+
+    document.getElementById('result').innerHTML   = '';
+    document.getElementById('summary').innerHTML  = '';
+    document.getElementById('headerBox').innerHTML = 'ここに納地・業者名ヘッダーが表示されます。';
+    document.getElementById('sumBox').innerHTML   = '';
+    lastHeaderText  = '';
+    lastDetailsText = '';
+    lastSummaryText = '';
+    currentRows     = [];
+    originalSummary = null;
+    lastAllDataText = '';
+  }
 
   function doParse() {
     var text = ta.value || '';
@@ -845,6 +1018,121 @@ function copyTextToClipboard(text, label) {
   originalSummary = null;
   lastAllDataText = '';
 };
+
+  btnSaveLocal.onclick = async function() {
+    try {
+      var data = createLocalSaveData();
+      var jsonText = JSON.stringify(data, null, 2);
+      var fileName = buildSaveFileName();
+
+      if (isFileProtocolPage() || !window.showDirectoryPicker) {
+        saveDataByDownload(jsonText);
+        setStatusMessage('JSONファイルとして保存しました（' + fileName + '）。');
+        return;
+      }
+
+      var dirHandle = await window.showDirectoryPicker({
+        id: 'ledger-local-data',
+        mode: 'readwrite',
+        startIn: 'documents'
+      });
+      var fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      var writable = await fileHandle.createWritable();
+      await writable.write(jsonText);
+      await writable.close();
+      setStatusMessage('データを保存しました（' + fileName + '）。');
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        setStatusMessage('保存をキャンセルしました。');
+        return;
+      }
+      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError')) {
+        try {
+          var fallbackData = createLocalSaveData();
+          var fallbackJson = JSON.stringify(fallbackData, null, 2);
+          var fallbackName = buildSaveFileName();
+          saveDataByDownload(fallbackJson);
+          setStatusMessage('フォルダ保存できないため、JSONファイル保存に切り替えました（' + fallbackName + '）。');
+          return;
+        } catch (e) {
+          // フォールバック失敗時は下の共通メッセージ
+        }
+      }
+      setStatusMessage('保存に失敗しました。');
+    }
+  };
+
+  btnOpenLocal.onclick = async function() {
+    try {
+      var data;
+
+      if (isFileProtocolPage() || !window.showOpenFilePicker) {
+        data = await openDataByFileInput();
+      } else {
+        var fileHandles = await window.showOpenFilePicker({
+          id: 'ledger-local-open',
+          multiple: false,
+          startIn: 'documents',
+          types: [
+            {
+              description: 'JSONファイル',
+              accept: { 'application/json': ['.json'] }
+            }
+          ]
+        });
+        var fileHandle = fileHandles && fileHandles[0] ? fileHandles[0] : null;
+        if (!fileHandle) {
+          throw { name: 'AbortError' };
+        }
+        var file = await fileHandle.getFile();
+        var text = await file.text();
+        data = JSON.parse(text);
+      }
+
+      if (!data || data.format !== 'ledger-local-save-v1') {
+        setStatusMessage('読み込んだデータ形式が不正です。');
+        return;
+      }
+
+      applyLocalSaveData(data);
+      setStatusMessage('データを読み込みました（' + LOCAL_DATA_FILE_NAME + '）。');
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        setStatusMessage('読み込みをキャンセルしました。');
+        return;
+      }
+      if (err && err.name === 'NotFoundError') {
+        setStatusMessage('ファイルが見つかりません。');
+        return;
+      }
+      if (err && err.name === 'SyntaxError') {
+        setStatusMessage('JSONの形式が不正です。');
+        return;
+      }
+      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError')) {
+        try {
+          var fallbackLoaded = await openDataByFileInput();
+          if (!fallbackLoaded || fallbackLoaded.format !== 'ledger-local-save-v1') {
+            setStatusMessage('読み込んだデータ形式が不正です。');
+            return;
+          }
+          applyLocalSaveData(fallbackLoaded);
+          setStatusMessage('フォルダ読込できないため、JSONファイル読込に切り替えました。');
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') {
+            setStatusMessage('読み込みをキャンセルしました。');
+            return;
+          }
+          if (e && e.name === 'SyntaxError') {
+            setStatusMessage('JSONの形式が不正です。');
+            return;
+          }
+        }
+      }
+      setStatusMessage('読み込みに失敗しました。');
+    }
+  };
 
 
   // 規格欄 一括入力
