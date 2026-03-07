@@ -912,6 +912,66 @@ function copyTextToClipboard(text, label) {
     });
   }
 
+  async function pickDirectoryHandle(mode) {
+    if (!window.showDirectoryPicker) {
+      throw { name: 'NotSupportedError' };
+    }
+    try {
+      return await window.showDirectoryPicker({
+        id: 'ledger-local-data',
+        mode: mode || 'readwrite',
+        startIn: 'documents'
+      });
+    } catch (err) {
+      if (err && err.name === 'TypeError') {
+        return await window.showDirectoryPicker();
+      }
+      throw err;
+    }
+  }
+
+  async function openJsonDataWithPickerCompat() {
+    if (!window.showOpenFilePicker) {
+      return await openDataByFileInput();
+    }
+    try {
+      var fileHandles = await window.showOpenFilePicker({
+        id: 'ledger-local-open',
+        multiple: false,
+        startIn: 'documents',
+        types: [
+          {
+            description: 'JSONファイル',
+            accept: { 'application/json': ['.json'] }
+          }
+        ]
+      });
+      var fileHandle = fileHandles && fileHandles[0] ? fileHandles[0] : null;
+      if (!fileHandle) {
+        throw { name: 'AbortError' };
+      }
+      var file = await fileHandle.getFile();
+      var text = await file.text();
+      return JSON.parse(text);
+    } catch (err) {
+      if (err && err.name === 'TypeError') {
+        try {
+          var fallbackHandles = await window.showOpenFilePicker();
+          var fallbackHandle = fallbackHandles && fallbackHandles[0] ? fallbackHandles[0] : null;
+          if (!fallbackHandle) {
+            throw { name: 'AbortError' };
+          }
+          var fallbackFile = await fallbackHandle.getFile();
+          var fallbackText = await fallbackFile.text();
+          return JSON.parse(fallbackText);
+        } catch (e) {
+          return await openDataByFileInput();
+        }
+      }
+      throw err;
+    }
+  }
+
   function createLocalSaveData() {
     var rowsCopy = [];
     var i;
@@ -955,7 +1015,7 @@ function copyTextToClipboard(text, label) {
     }
 
     if (ta.value) {
-      doParse();
+      safeDoParse();
       return;
     }
 
@@ -974,26 +1034,60 @@ function copyTextToClipboard(text, label) {
   function doParse() {
     var text = ta.value || '';
     // ledger_paste_parser.js のパーサを利用
+    if (typeof parseLedgerText !== 'function') {
+      throw new Error('parseLedgerText is not available');
+    }
     var parsed = parseLedgerText(text);
     var rows    = parsed && parsed.rows ? parsed.rows : [];
     var summary = parsed && parsed.summary ? parsed.summary : { base:'',tax:'',total:'',calcBaseStr:'',baseCheckMark:'' };
     renderTable(rows, summary);
   }
 
+  function safeDoParse() {
+    try {
+      doParse();
+    } catch (err) {
+      setStatusMessage('貼り付け解析に失敗しました。テキスト形式を確認してください。');
+      if (window.console && console.error) {
+        console.error(err);
+      }
+    }
+  }
+
+  function scheduleParseWithRetry() {
+    setTimeout(safeDoParse, 0);
+    setTimeout(safeDoParse, 60);
+  }
+
   // 貼り付け時に自動解析
   if (ta.addEventListener) {
     ta.addEventListener('paste', function() {
-      setTimeout(doParse, 0);
+      scheduleParseWithRetry();
     }, false);
     ta.addEventListener('input', function() {
-      doParse();
+      safeDoParse();
+    }, false);
+    ta.addEventListener('change', function() {
+      safeDoParse();
+    }, false);
+    ta.addEventListener('keyup', function() {
+      safeDoParse();
+    }, false);
+    ta.addEventListener('drop', function() {
+      scheduleParseWithRetry();
     }, false);
   } else {
     ta.onpaste = function() {
-      setTimeout(doParse, 0);
+      scheduleParseWithRetry();
+    };
+    ta.oninput = function() {
+      safeDoParse();
     };
     ta.onkeyup = function() {
-      doParse();
+      safeDoParse();
+    };
+    ta.onchange = function() {
+      safeDoParse();
     };
   }
 
@@ -1031,11 +1125,7 @@ function copyTextToClipboard(text, label) {
         return;
       }
 
-      var dirHandle = await window.showDirectoryPicker({
-        id: 'ledger-local-data',
-        mode: 'readwrite',
-        startIn: 'documents'
-      });
+      var dirHandle = await pickDirectoryHandle('readwrite');
       var fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
       var writable = await fileHandle.createWritable();
       await writable.write(jsonText);
@@ -1046,7 +1136,7 @@ function copyTextToClipboard(text, label) {
         setStatusMessage('保存をキャンセルしました。');
         return;
       }
-      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError')) {
+      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError' || err.name === 'TypeError' || err.name === 'NotSupportedError')) {
         try {
           var fallbackData = createLocalSaveData();
           var fallbackJson = JSON.stringify(fallbackData, null, 2);
@@ -1066,27 +1156,20 @@ function copyTextToClipboard(text, label) {
     try {
       var data;
 
-      if (isFileProtocolPage() || !window.showOpenFilePicker) {
+      if (isFileProtocolPage()) {
         data = await openDataByFileInput();
       } else {
-        var fileHandles = await window.showOpenFilePicker({
-          id: 'ledger-local-open',
-          multiple: false,
-          startIn: 'documents',
-          types: [
-            {
-              description: 'JSONファイル',
-              accept: { 'application/json': ['.json'] }
-            }
-          ]
-        });
-        var fileHandle = fileHandles && fileHandles[0] ? fileHandles[0] : null;
-        if (!fileHandle) {
-          throw { name: 'AbortError' };
+        if (window.showOpenFilePicker) {
+          data = await openJsonDataWithPickerCompat();
+        } else if (window.showDirectoryPicker) {
+          var dirHandle = await pickDirectoryHandle('read');
+          var dirFileHandle = await dirHandle.getFileHandle(LOCAL_DATA_FILE_NAME);
+          var dirFile = await dirFileHandle.getFile();
+          var dirText = await dirFile.text();
+          data = JSON.parse(dirText);
+        } else {
+          data = await openDataByFileInput();
         }
-        var file = await fileHandle.getFile();
-        var text = await file.text();
-        data = JSON.parse(text);
       }
 
       if (!data || data.format !== 'ledger-local-save-v1') {
@@ -1109,7 +1192,7 @@ function copyTextToClipboard(text, label) {
         setStatusMessage('JSONの形式が不正です。');
         return;
       }
-      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError')) {
+      if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'InvalidStateError' || err.name === 'TypeError' || err.name === 'NotSupportedError')) {
         try {
           var fallbackLoaded = await openDataByFileInput();
           if (!fallbackLoaded || fallbackLoaded.format !== 'ledger-local-save-v1') {
