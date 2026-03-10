@@ -503,3 +503,7 @@
 2026-03-10 10:31:54.224: [INFO] Remove, DeletionOrigin: 19
 2026-03-10 10:31:54.224: [INFO] BookmarkNodeRemoved, Url: 1, IsFolder: 0, IsWorkspace: 0
 2026-03-10 10:31:55.290: [INFO] Sync initialization duration: 1794ms
+2026-03-10 10:38:49.609: [INFO] VisibilityChanged: 0
+2026-03-10 10:38:49.664: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-03-10 10:38:49.664: [INFO] OnDoneLoading sync enabled: 1
+2026-03-10 10:38:49.894: [INFO] Sync initialization duration: 41ms
