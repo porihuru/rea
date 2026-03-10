@@ -1,0 +1,5 @@
+2026/03/10-19:13:39.958 801c Creating DB C:\Users\hiroshi\git\rea\.vscode\edge-profile\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/03/10-19:13:39.967 801c Reusing MANIFEST C:\Users\hiroshi\git\rea\.vscode\edge-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/03/10-19:13:47.194 4a00 Level-0 table #5: started
+2026/03/10-19:13:47.197 4a00 Level-0 table #5: 681612 bytes OK
+2026/03/10-19:13:47.199 4a00 Delete type=0 #3
