@@ -594,6 +594,73 @@ function copyTextToClipboard(text, label) {
   }
 }
 
+function zeroPad2(value) {
+  var num = parseInt(value, 10);
+  if (isNaN(num)) return '00';
+  return num < 10 ? '0' + num : String(num);
+}
+
+function getEdgeMajorVersion() {
+  var ua = (window.navigator && window.navigator.userAgent) ? window.navigator.userAgent : '';
+  var m = ua.match(/Edg\/([0-9]+)/);
+  if (!m) return 0;
+  return parseInt(m[1], 10) || 0;
+}
+
+function isLegacyEdgeCompatibilityMode() {
+  var major = getEdgeMajorVersion();
+  return major > 0 && major <= 95;
+}
+
+function readBlobAsTextCompat(blob) {
+  return new Promise(function(resolve, reject) {
+    if (!blob) {
+      reject({ name: 'ReadError' });
+      return;
+    }
+
+    if (typeof blob.text === 'function') {
+      blob.text().then(resolve, function() {
+        if (!window.FileReader) {
+          reject({ name: 'ReadError' });
+          return;
+        }
+        try {
+          var reader = new FileReader();
+          reader.onload = function() {
+            resolve(String(reader.result || ''));
+          };
+          reader.onerror = function() {
+            reject({ name: 'ReadError' });
+          };
+          reader.readAsText(blob);
+        } catch (e) {
+          reject({ name: 'ReadError' });
+        }
+      });
+      return;
+    }
+
+    if (!window.FileReader) {
+      reject({ name: 'ReadError' });
+      return;
+    }
+
+    try {
+      var reader2 = new FileReader();
+      reader2.onload = function() {
+        resolve(String(reader2.result || ''));
+      };
+      reader2.onerror = function() {
+        reject({ name: 'ReadError' });
+      };
+      reader2.readAsText(blob);
+    } catch (e2) {
+      reject({ name: 'ReadError' });
+    }
+  });
+}
+
 // -------------------- 自動解析イベント --------------------
 
 (function() {
@@ -639,6 +706,14 @@ function copyTextToClipboard(text, label) {
     return window.location && window.location.protocol === 'file:';
   }
 
+  function canUseDirectoryPicker() {
+    return !isLegacyEdgeCompatibilityMode() && !!window.showDirectoryPicker;
+  }
+
+  function canUseOpenFilePicker() {
+    return !isLegacyEdgeCompatibilityMode() && !!window.showOpenFilePicker;
+  }
+
   function saveDataByDownload(jsonText) {
     var fileName = buildSaveFileName();
     var blob = new Blob([jsonText], { type: 'application/json' });
@@ -666,8 +741,8 @@ function copyTextToClipboard(text, label) {
     if (!d) {
       var now = new Date();
       var y = String(now.getFullYear());
-      var m = String(now.getMonth() + 1).padStart(2, '0');
-      var day = String(now.getDate()).padStart(2, '0');
+      var m = zeroPad2(now.getMonth() + 1);
+      var day = zeroPad2(now.getDate());
       return y + m + day;
     }
     return String(d).replace(/-/g, '');
@@ -738,7 +813,7 @@ function copyTextToClipboard(text, label) {
   }
 
   async function pickDirectoryHandle(mode) {
-    if (!window.showDirectoryPicker) {
+    if (!canUseDirectoryPicker()) {
       throw { name: 'NotSupportedError' };
     }
     try {
@@ -756,7 +831,7 @@ function copyTextToClipboard(text, label) {
   }
 
   async function openJsonDataWithPickerCompat() {
-    if (!window.showOpenFilePicker) {
+    if (!canUseOpenFilePicker()) {
       return await openDataByFileInput();
     }
     try {
@@ -776,7 +851,7 @@ function copyTextToClipboard(text, label) {
         throw { name: 'AbortError' };
       }
       var file = await fileHandle.getFile();
-      var text = await file.text();
+      var text = await readBlobAsTextCompat(file);
       return JSON.parse(text);
     } catch (err) {
       if (err && err.name === 'TypeError') {
@@ -787,7 +862,7 @@ function copyTextToClipboard(text, label) {
             throw { name: 'AbortError' };
           }
           var fallbackFile = await fallbackHandle.getFile();
-          var fallbackText = await fallbackFile.text();
+          var fallbackText = await readBlobAsTextCompat(fallbackFile);
           return JSON.parse(fallbackText);
         } catch (e) {
           return await openDataByFileInput();
@@ -944,7 +1019,7 @@ function copyTextToClipboard(text, label) {
       var jsonText = JSON.stringify(data, null, 2);
       var fileName = buildSaveFileName();
 
-      if (isFileProtocolPage() || !window.showDirectoryPicker) {
+      if (isFileProtocolPage() || !canUseDirectoryPicker()) {
         saveDataByDownload(jsonText);
         setStatusMessage('JSONファイルとして保存しました（' + fileName + '）。');
         return;
@@ -984,13 +1059,13 @@ function copyTextToClipboard(text, label) {
       if (isFileProtocolPage()) {
         data = await openDataByFileInput();
       } else {
-        if (window.showOpenFilePicker) {
+        if (canUseOpenFilePicker()) {
           data = await openJsonDataWithPickerCompat();
-        } else if (window.showDirectoryPicker) {
+        } else if (canUseDirectoryPicker()) {
           var dirHandle = await pickDirectoryHandle('read');
           var dirFileHandle = await dirHandle.getFileHandle(LOCAL_DATA_FILE_NAME);
           var dirFile = await dirFileHandle.getFile();
-          var dirText = await dirFile.text();
+          var dirText = await readBlobAsTextCompat(dirFile);
           data = JSON.parse(dirText);
         } else {
           data = await openDataByFileInput();
@@ -1151,8 +1226,8 @@ function copyTextToClipboard(text, label) {
     var threeDaysLater = new Date(today);
     threeDaysLater.setDate(threeDaysLater.getDate() + 3);
     var yyyy = threeDaysLater.getFullYear();
-    var mm = String(threeDaysLater.getMonth() + 1).padStart(2, '0');
-    var dd = String(threeDaysLater.getDate()).padStart(2, '0');
+    var mm = zeroPad2(threeDaysLater.getMonth() + 1);
+    var dd = zeroPad2(threeDaysLater.getDate());
     billDate.value = yyyy + '-' + mm + '-' + dd;
   }
 
